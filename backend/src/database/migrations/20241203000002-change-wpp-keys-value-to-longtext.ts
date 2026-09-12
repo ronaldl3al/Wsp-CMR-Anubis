@@ -3,7 +3,7 @@ import { QueryInterface, DataTypes } from "sequelize";
 module.exports = {
   up: async (queryInterface: QueryInterface) => {
     await queryInterface.changeColumn("WppKeys", "value", {
-      type: DataTypes.TEXT('long'),
+      type: DataTypes.TEXT("long" as any),
       allowNull: false
     });
   },
