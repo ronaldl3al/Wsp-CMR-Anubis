@@ -101,7 +101,12 @@ const getSerializedMessageId = (
 const convertToContactPayload = async (
   msgContact: WbotContact
 ): Promise<ContactPayload> => {
-  const profilePicUrl = await msgContact.getProfilePicUrl();
+  let profilePicUrl;
+  try {
+    profilePicUrl = await msgContact.getProfilePicUrl();
+  } catch (err) {
+    logger.warn(`Could not get profile pic for ${msgContact.id.user}`);
+  }
 
   return {
     name: msgContact.name || msgContact.pushname || msgContact.id.user,
@@ -142,7 +147,10 @@ const convertToMessagePayload = async (
     processedMsg = prepareLocation(msg);
   }
 
-  const quotedMsgId = await verifyQuotedMessage(processedMsg);
+  let quotedMsgId;
+  try {
+     quotedMsgId = await verifyQuotedMessage(processedMsg);
+  } catch(err) {}
 
   return {
     id: processedMsg.id.id,
@@ -163,18 +171,23 @@ const convertToMediaPayload = async (
 ): Promise<MediaPayload | undefined> => {
   if (!msg.hasMedia) return undefined;
 
-  const media = await msg.downloadMedia();
-  if (!media) return undefined;
+  try {
+    const media = await msg.downloadMedia();
+    if (!media) return undefined;
 
-  return {
-    filename: media.filename || "",
-    mimetype: media.mimetype,
-    data: media.data
-  };
+    return {
+      filename: media.filename || "",
+      mimetype: media.mimetype,
+      data: media.data
+    };
+  } catch (err) {
+    logger.warn(`Could not download media for message`);
+    return undefined;
+  }
 };
 
 const shouldHandleMessage = (msg: WbotMessage): boolean => {
-  if (msg.from === "status@broadcast") return false;
+  if (msg.from === "status@broadcast" || msg.to === "status@broadcast") return false;
 
   if (
     !(
