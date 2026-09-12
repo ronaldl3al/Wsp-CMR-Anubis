@@ -10,10 +10,7 @@ let config: any = {
   logging: false
 };
 
-if (process.env.MYSQL_URL) {
-  // Support Railway MYSQL_URL directly
-  config.url = process.env.MYSQL_URL;
-} else if (process.env.MYSQLHOST) {
+if (process.env.MYSQLHOST) {
   // Support Railway individual variables natively
   config.host = process.env.MYSQLHOST;
   config.port = process.env.MYSQLPORT || 3306;
