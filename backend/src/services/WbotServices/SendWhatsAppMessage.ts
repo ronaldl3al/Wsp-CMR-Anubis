@@ -20,7 +20,19 @@ const SendWhatsAppMessage = async ({
     throw new AppError("ERR_TICKET_NO_WHATSAPP");
   }
 
-  const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+  let chatId = "";
+  if (ticket.contact.lid) {
+    chatId = ticket.contact.lid;
+  } else if (ticket.isGroup) {
+    chatId = `${ticket.contact.number}@g.us`;
+  } else {
+    // If it's a long opaque ID from the recent bug, route it to @lid
+    if (ticket.contact.number && ticket.contact.number.length >= 14 && ticket.contact.number.startsWith("70")) {
+      chatId = `${ticket.contact.number}@lid`;
+    } else {
+      chatId = `${ticket.contact.number}@c.us`;
+    }
+  }
 
   try {
     const sentMessage = await whatsappProvider.sendMessage(
