@@ -29,7 +29,7 @@ app.use("/public", express.static(uploadConfig.directory));
 
 // --- Serve React Frontend Statically (Single Container) ---
 import path from "path";
-const frontendPath = path.join(__dirname, "..", "..", "public", "frontend");
+const frontendPath = path.join(__dirname, "..", "public", "frontend");
 app.use(express.static(frontendPath));
 
 app.use(routes);
