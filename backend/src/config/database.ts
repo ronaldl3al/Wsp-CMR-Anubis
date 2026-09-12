@@ -25,4 +25,8 @@ if (process.env.MYSQLHOST) {
   config.password = process.env.DB_PASS;
 }
 
-module.exports = config;
+module.exports = {
+  development: config,
+  test: config,
+  production: config
+};
