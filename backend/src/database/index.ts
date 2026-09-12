@@ -14,9 +14,8 @@ import WppKey from "../models/WppKey";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
-// import dbConfig from "../config/database";
-
-const sequelize = new Sequelize(dbConfig);
+const env = process.env.NODE_ENV || "development";
+const sequelize = new Sequelize(dbConfig[env] || dbConfig);
 
 const models = [
   User,

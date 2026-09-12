@@ -5,7 +5,7 @@ echo "Starting Whaticket Community Railway container..."
 
 # 1. Run database migrations
 echo "Running database migrations..."
-npx sequelize db:migrate
+npx sequelize db:migrate --debug
 
 # 2. Run seeds (will create default users, etc. if they don't exist)
 echo "Running database seeds..."
