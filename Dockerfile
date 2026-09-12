@@ -3,7 +3,7 @@
 # =============================================================
 
 # ── Stage 1: Build Frontend ──────────────────────────────────
-FROM node:20-bookworm-slim AS frontend-builder
+FROM node:20-bullseye-slim AS frontend-builder
 
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
@@ -12,7 +12,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Stage 2: Build Backend ───────────────────────────────────
-FROM node:20-bookworm-slim AS backend-builder
+FROM node:20-bullseye-slim AS backend-builder
 
 WORKDIR /app/backend
 COPY backend/package*.json ./
@@ -21,7 +21,7 @@ COPY backend/ ./
 RUN npm run build
 
 # ── Stage 3: Runtime Image ───────────────────────────────────
-FROM node:20-bookworm-slim
+FROM node:20-bullseye-slim
 
 # Install Google Chrome Stable and FFmpeg for WhatsApp Web.js
 RUN apt-get update && apt-get install -y \
