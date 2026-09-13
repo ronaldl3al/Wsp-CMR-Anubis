@@ -13,11 +13,23 @@ export const StartWhatsAppSession = async (
     action: "update",
     session: whatsapp
   });
+  io.emit("whatsapp", {
+    action: "update",
+    whatsapp
+  });
 
   try {
-    console.log("VAI!");
     await whatsappProvider.init(whatsapp);
   } catch (err) {
     logger.error(err);
+    await whatsapp.update({ status: "DISCONNECTED" });
+    io.emit("whatsappSession", {
+      action: "update",
+      session: whatsapp
+    });
+    io.emit("whatsapp", {
+      action: "update",
+      whatsapp
+    });
   }
 };

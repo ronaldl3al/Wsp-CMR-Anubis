@@ -10,6 +10,7 @@ interface WhatsappData {
   name?: string;
   status?: string;
   session?: string;
+  qrcode?: string;
   isDefault?: boolean;
   greetingMessage?: string;
   farewellMessage?: string;
@@ -41,6 +42,7 @@ const UpdateWhatsAppService = async ({
     status,
     isDefault,
     session,
+    qrcode,
     greetingMessage,
     farewellMessage,
     queueIds = []
@@ -73,6 +75,7 @@ const UpdateWhatsAppService = async ({
     name,
     status,
     session,
+    qrcode,
     greetingMessage,
     farewellMessage,
     isDefault

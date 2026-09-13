@@ -16,8 +16,9 @@ const reducer = (state, action) => {
 		const whatsAppIndex = state.findIndex(s => s.id === whatsApp.id);
 
 		if (whatsAppIndex !== -1) {
-			state[whatsAppIndex] = whatsApp;
-			return [...state];
+			const newState = [...state];
+			newState[whatsAppIndex] = { ...state[whatsAppIndex], ...whatsApp };
+			return newState;
 		} else {
 			return [whatsApp, ...state];
 		}
@@ -28,11 +29,16 @@ const reducer = (state, action) => {
 		const whatsAppIndex = state.findIndex(s => s.id === whatsApp.id);
 
 		if (whatsAppIndex !== -1) {
-			state[whatsAppIndex].status = whatsApp.status;
-			state[whatsAppIndex].updatedAt = whatsApp.updatedAt;
-			state[whatsAppIndex].qrcode = whatsApp.qrcode;
-			state[whatsAppIndex].retries = whatsApp.retries;
-			return [...state];
+			const newState = [...state];
+			newState[whatsAppIndex] = {
+				...state[whatsAppIndex],
+				...whatsApp,
+				status: whatsApp.status,
+				updatedAt: whatsApp.updatedAt,
+				qrcode: whatsApp.qrcode,
+				retries: whatsApp.retries
+			};
+			return newState;
 		} else {
 			return [...state];
 		}

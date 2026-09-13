@@ -30,11 +30,13 @@ const QrcodeModal = ({ open, onClose, whatsAppId }) => {
 
 		socket.on("whatsappSession", data => {
 			if (data.action === "update" && data.session.id === whatsAppId) {
-				setQrCode(data.session.qrcode);
-			}
+				if (data.session.qrcode) {
+					setQrCode(data.session.qrcode);
+				}
 
-			if (data.action === "update" && data.session.qrcode === "") {
-				onClose();
+				if (data.session.status === "CONNECTED") {
+					onClose();
+				}
 			}
 		});
 

@@ -16,9 +16,11 @@ const store = async (req: Request, res: Response): Promise<Response> => {
 const update = async (req: Request, res: Response): Promise<Response> => {
   const { whatsappId } = req.params;
 
+  whatsappProvider.removeSession(+whatsappId);
+
   const { whatsapp } = await UpdateWhatsAppService({
     whatsappId,
-    whatsappData: { session: "" }
+    whatsappData: { session: "", qrcode: "", status: "OPENING" }
   });
 
   StartWhatsAppSession(whatsapp);

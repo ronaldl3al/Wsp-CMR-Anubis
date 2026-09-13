@@ -197,7 +197,7 @@ const Connections = () => {
 	const renderActionButtons = whatsApp => {
 		return (
 			<>
-				{whatsApp.status === "qrcode" && (
+				{(whatsApp.status === "qrcode" || Boolean(whatsApp.qrcode)) && (
 					<Button
 						size="small"
 						variant="contained"
@@ -241,10 +241,20 @@ const Connections = () => {
 						{i18n.t("connections.buttons.disconnect")}
 					</Button>
 				)}
-				{whatsApp.status === "OPENING" && (
-					<Button size="small" variant="outlined" disabled color="default">
-						{i18n.t("connections.buttons.connecting")}
-					</Button>
+				{whatsApp.status === "OPENING" && !whatsApp.qrcode && (
+					<>
+						<Button size="small" variant="outlined" disabled color="default">
+							{i18n.t("connections.buttons.connecting")}
+						</Button>{" "}
+						<Button
+							size="small"
+							variant="outlined"
+							color="secondary"
+							onClick={() => handleRequestNewQrCode(whatsApp.id)}
+						>
+							{i18n.t("connections.buttons.newQr")}
+						</Button>
+					</>
 				)}
 			</>
 		);

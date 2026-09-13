@@ -38,6 +38,7 @@ import Whatsapp from "../../../models/Whatsapp";
 import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
+import WppKey from "../../../models/WppKey";
 import { getIO } from "../../../libs/socket";
 import { logger } from "../../../utils/logger";
 import AppError from "../../../errors/AppError";
@@ -174,6 +175,13 @@ const msgCache = {
 };
 
 const clearSessionKeys = async (sessionId: number): Promise<void> => {
+  try {
+    await WppKey.destroy({ where: { connectionId: sessionId } });
+    logger.info({ info: "Cleared WppKey database session keys", sessionId });
+  } catch (err) {
+    logger.error({ info: "Error clearing WppKey database session keys", sessionId, err });
+  }
+
   const client = getRedisClient();
   if (!client) return;
 
@@ -983,13 +991,19 @@ const removeSession = async (whatsappId: number): Promise<void> => {
 
   sessions.delete(whatsappId);
   stores.delete(whatsappId);
+  clearSessionKeys(whatsappId).catch(() => {});
 };
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
   const sessionId = whatsapp.id;
   const io = getIO();
 
-  const { state } = await useSessionAuthState(whatsapp);
+  try {
+    if (!whatsapp.session) {
+      await clearSessionKeys(sessionId);
+    }
+
+    const { state } = await useSessionAuthState(whatsapp);
   const store = makeInMemoryStore({ logger: whaileyLogger });
   stores.set(sessionId, store);
 
@@ -1026,16 +1040,22 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   if (!waVersionToUse) {
     try {
-      const fetchedVersionData = await fetchLatestWaWebVersion({});
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout fetching WA Web version")), 3000)
+      );
+      const fetchedVersionData: any = await Promise.race([
+        fetchLatestWaWebVersion({}),
+        timeoutPromise
+      ]);
       if (fetchedVersionData?.version) {
         waVersionToUse = fetchedVersionData.version;
         logger.info({
           info: "Using latest WA Web version",
-          version: waVersionToUse.join(".")
+          version: waVersionToUse ? waVersionToUse.join(".") : ""
         });
       }
     } catch (e) {
-      logger.warn({ info: "Failed to fetch latest WA version, using default" });
+      logger.warn({ info: "Failed to fetch latest WA version or timed out, using default" });
     }
   }
 
@@ -1539,6 +1559,10 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
             action: "update",
             session: updatedWhatsapp
           });
+          io.emit("whatsapp", {
+            action: "update",
+            whatsapp: updatedWhatsapp
+          });
         }
 
         logger.info({ info: "Session intentionally logged out", sessionId });
@@ -1562,8 +1586,13 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
             action: "update",
             session: updatedWhatsapp
           });
+          io.emit("whatsapp", {
+            action: "update",
+            whatsapp: updatedWhatsapp
+          });
         }
 
+        await clearSessionKeys(sessionId);
         await removeSession(sessionId);
 
         return;
@@ -1575,9 +1604,14 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         await flushPendingCredsSave(sessionId);
 
         await whatsapp.update({ status: "OPENING" });
+        const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
         io.emit("whatsappSession", {
           action: "update",
-          session: whatsapp
+          session: updatedWhatsapp || whatsapp
+        });
+        io.emit("whatsapp", {
+          action: "update",
+          whatsapp: updatedWhatsapp || whatsapp
         });
         logger.info({
           info: "Connection closed, reconnecting...",
@@ -1605,6 +1639,10 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           action: "update",
           session: updatedWhatsapp
         });
+        io.emit("whatsapp", {
+          action: "update",
+          whatsapp: updatedWhatsapp
+        });
       }
 
       logger.info({ info: "Session connected", sessionId });
@@ -1616,12 +1654,18 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         status: "qrcode"
       });
 
+      const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
+
       io.emit("whatsappSession", {
         action: "update",
-        session: whatsapp
+        session: updatedWhatsapp || whatsapp
+      });
+      io.emit("whatsapp", {
+        action: "update",
+        whatsapp: updatedWhatsapp || whatsapp
       });
 
-      logger.info({ info: "QR Code generated", sessionId });
+      logger.info({ info: "QR Code generated", sessionId, qrLength: qr.length });
     }
   });
 
@@ -1677,6 +1721,27 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       })
     );
   });
+  } catch (err) {
+    logger.error({ info: "Error during init of WhatsApp session", sessionId, err });
+    try {
+      await whatsapp.update({
+        status: "DISCONNECTED",
+        qrcode: ""
+      });
+      const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
+      io.emit("whatsappSession", {
+        action: "update",
+        session: updatedWhatsapp || whatsapp
+      });
+      io.emit("whatsapp", {
+        action: "update",
+        whatsapp: updatedWhatsapp || whatsapp
+      });
+    } catch (e) {
+      logger.error({ info: "Error updating whatsapp status to DISCONNECTED on init failure", sessionId, err: e });
+    }
+    throw err;
+  }
 };
 
 const logout = async (sessionId: number): Promise<void> => {
@@ -1707,6 +1772,10 @@ const logout = async (sessionId: number): Promise<void> => {
       getIO().emit("whatsappSession", {
         action: "update",
         session: updatedWhatsapp
+      });
+      getIO().emit("whatsapp", {
+        action: "update",
+        whatsapp: updatedWhatsapp
       });
     }
 
