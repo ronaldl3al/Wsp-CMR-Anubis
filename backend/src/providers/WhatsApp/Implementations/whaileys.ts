@@ -34,6 +34,7 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import NodeCache from "node-cache";
 
 import Whatsapp from "../../../models/Whatsapp";
+import Contact from "../../../models/Contact";
 import { getIO } from "../../../libs/socket";
 import { logger } from "../../../utils/logger";
 import AppError from "../../../errors/AppError";
@@ -1034,6 +1035,56 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   wbot.ev.on("creds.update", () => {
     debouncedSaveCreds(whatsapp, state.creds);
+  });
+
+  wbot.ev.on("contacts.upsert", async contacts => {
+    try {
+      let synced = 0;
+      for (const contact of contacts) {
+        if (!contact.id) continue;
+        const isGroup = contact.id.includes("@g.us");
+        const isUser = contact.id.includes("@s.whatsapp.net");
+        const isLid = contact.id.includes("@lid");
+
+        if (!isGroup && !isUser && !isLid) continue;
+
+        const number = contact.id.replace(/[^0-9]/g, "");
+        const name = contact.name || contact.notify || number;
+        const lid = contact.lid;
+
+        if (!number && !lid) continue;
+
+        const existing = await Contact.findOne({
+          where: number ? { number } : { lid }
+        });
+
+        if (existing) {
+          const updateData: any = {};
+          if (name && name !== number && existing.name !== name) {
+            updateData.name = name;
+          }
+          if (lid && existing.lid !== lid) {
+            updateData.lid = lid;
+          }
+          if (Object.keys(updateData).length > 0) {
+            await existing.update(updateData);
+            getIO().emit("contact", { action: "update", contact: existing });
+          }
+        } else {
+          const created = await Contact.create({
+            name,
+            number,
+            lid,
+            isGroup
+          });
+          getIO().emit("contact", { action: "create", contact: created });
+        }
+        synced++;
+      }
+      logger.info(`[SYNC] Successfully synced ${synced} contacts from WhatsApp phonebook.`);
+    } catch (err) {
+      logger.error({ err }, "Error syncing contacts");
+    }
   });
 
   wbot.ev.on("messages.upsert", async ({ messages, type }) => {
