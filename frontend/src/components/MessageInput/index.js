@@ -282,6 +282,9 @@ const MessageInput = ({ ticketStatus }) => {
 
     const formData = new FormData();
     formData.append("fromMe", true);
+    if (replyingMessage) {
+      formData.append("quotedMsg", JSON.stringify(replyingMessage));
+    }
     medias.forEach(media => {
       formData.append("medias", media);
       formData.append("body", media.name);
@@ -440,33 +443,36 @@ const MessageInput = ({ ticketStatus }) => {
 
   if (medias.length > 0)
     return (
-      <Paper elevation={0} square className={classes.viewMediaInputWrapper}>
-        <IconButton
-          aria-label="cancel-upload"
-          component="span"
-          onClick={e => setMedias([])}
-        >
-          <CancelIcon className={classes.sendMessageIcons} />
-        </IconButton>
+      <Paper square elevation={0} className={classes.mainWrapper}>
+        {replyingMessage && renderReplyingMessage(replyingMessage)}
+        <div className={classes.viewMediaInputWrapper}>
+          <IconButton
+            aria-label="cancel-upload"
+            component="span"
+            onClick={e => setMedias([])}
+          >
+            <CancelIcon className={classes.sendMessageIcons} />
+          </IconButton>
 
-        {loading ? (
-          <div>
-            <CircularProgress className={classes.circleLoading} />
-          </div>
-        ) : (
-          <span>
-            {medias[0]?.name}
-            {/* <img src={media.preview} alt=""></img> */}
-          </span>
-        )}
-        <IconButton
-          aria-label="send-upload"
-          component="span"
-          onClick={handleUploadMedia}
-          disabled={loading}
-        >
-          <SendIcon className={classes.sendMessageIcons} />
-        </IconButton>
+          {loading ? (
+            <div>
+              <CircularProgress className={classes.circleLoading} />
+            </div>
+          ) : (
+            <span>
+              {medias[0]?.name}
+              {/* <img src={media.preview} alt=""></img> */}
+            </span>
+          )}
+          <IconButton
+            aria-label="send-upload"
+            component="span"
+            onClick={handleUploadMedia}
+            disabled={loading}
+          >
+            <SendIcon className={classes.sendMessageIcons} />
+          </IconButton>
+        </div>
       </Paper>
     );
   else {

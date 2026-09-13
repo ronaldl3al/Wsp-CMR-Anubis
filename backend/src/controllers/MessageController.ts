@@ -40,6 +40,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const { body, quotedMsg }: MessageData = req.body;
   const medias = req.files as Express.Multer.File[];
 
+  let parsedQuotedMsg = quotedMsg;
+  if (typeof quotedMsg === "string") {
+    try {
+      parsedQuotedMsg = JSON.parse(quotedMsg);
+    } catch (e) {
+      parsedQuotedMsg = undefined;
+    }
+  }
+
   const ticket = await ShowTicketService(ticketId);
 
   SetTicketMessagesAsRead(ticket);
@@ -47,11 +56,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   if (medias) {
     await Promise.all(
       medias.map(async (media: Express.Multer.File) => {
-        await SendWhatsAppMedia({ media, ticket, quotedMsg });
+        await SendWhatsAppMedia({ media, ticket, quotedMsg: parsedQuotedMsg });
       })
     );
   } else {
-    await SendWhatsAppMessage({ body, ticket, quotedMsg });
+    await SendWhatsAppMessage({ body, ticket, quotedMsg: parsedQuotedMsg });
   }
 
   return res.send();
