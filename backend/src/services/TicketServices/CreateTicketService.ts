@@ -21,16 +21,19 @@ const CreateTicketService = async ({
 }: Request): Promise<Ticket> => {
   const defaultWhatsapp = await GetDefaultWhatsApp(userId);
 
-  const existingTicket = await Ticket.findOne({
+  let existingTicket = await Ticket.findOne({
     where: {
       contactId,
-      whatsappId: defaultWhatsapp.id,
-      status: { [Op.or]: ["open", "pending"] }
+      whatsappId: defaultWhatsapp.id
     },
+    order: [["updatedAt", "DESC"]],
     include: ["contact"]
   });
 
   if (existingTicket) {
+    if (existingTicket.status === "closed") {
+      await existingTicket.update({ status: "open", userId });
+    }
     await SyncChatHistoryService(existingTicket);
     return existingTicket;
   }

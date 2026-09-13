@@ -1149,35 +1149,72 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         for (const msg of messages) {
           if (!msg.message || !shouldHandleMessage(msg)) continue;
           const remoteJid = msg.key.remoteJid || "";
+          if (
+            !remoteJid ||
+            isJidBroadcast(remoteJid) ||
+            remoteJid.endsWith("newsletter")
+          ) {
+            continue;
+          }
+
           const number = remoteJid.replace(/[^0-9]/g, "");
           const isLid = isLidUser(remoteJid);
+          const isGroup = isJidGroup(remoteJid);
+
+          if (!number && !isLid) continue;
 
           const whereContact: any = {};
           if (isLid) {
             whereContact.lid = remoteJid;
           } else if (number) {
-            whereContact[Op.or] = [
-              { number },
-              number.length >= 8
-                ? { number: { [Op.like]: `%${number.slice(-8)}` } }
-                : { number }
-            ];
+            const orList: any[] = [{ number }];
+            if (number.length >= 8) {
+              orList.push({ number: { [Op.like]: `%${number.slice(-8)}` } });
+            }
+            if (number.length === 10 && number.startsWith("4")) {
+              orList.push({ number: `58${number}` });
+            }
+            whereContact[Op.or] = orList;
           }
 
-          const contact = await Contact.findOne({ where: whereContact });
-          if (!contact) continue;
+          let contact = await Contact.findOne({ where: whereContact });
+          if (!contact) {
+            const pushName = msg.pushName?.trim();
+            const isValidName =
+              pushName && !/^[.\-_*~,#@!?:;'"\\/\s]+$/.test(pushName);
+            const contactName = isValidName ? pushName : (number || remoteJid);
 
-          const ticket = await Ticket.findOne({
+            contact = await Contact.create({
+              name: contactName,
+              number: number || "",
+              lid: isLid ? remoteJid : undefined,
+              isGroup
+            });
+            getIO().emit("contact", { action: "create", contact });
+          }
+
+          let ticket = await Ticket.findOne({
             where: { contactId: contact.id },
             order: [["updatedAt", "DESC"]]
           });
 
+          if (!ticket) {
+            ticket = await Ticket.create({
+              contactId: contact.id,
+              whatsappId: sessionId,
+              status: "closed",
+              isGroup,
+              unreadMessages: 0
+            });
+          }
+
           if (ticket && msg.key.id) {
             const exists = await Message.findByPk(msg.key.id);
             if (!exists) {
-              const createdAt = msg.messageTimestamp
-                ? new Date(Number(msg.messageTimestamp) * 1000)
-                : new Date();
+              const rawTs = Number(msg.messageTimestamp);
+              const timestampMs =
+                rawTs > 1000000000000 ? rawTs : rawTs * 1000;
+              const createdAt = new Date(timestampMs || Date.now());
               const body = getMessageBody(msg) || "";
               const mediaType = mapMessageType(msg) || "chat";
 
@@ -1206,7 +1243,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         }
         if (syncedToTickets > 0) {
           logger.info(
-            `[SYNC] Synced ${syncedToTickets} history messages to existing tickets.`
+            `[SYNC] Stored and synced ${syncedToTickets} history messages from WhatsApp.`
           );
         }
       } catch (err) {
@@ -1849,28 +1886,73 @@ const fetchChatMessages = async (
     }
   }
 
+const sendPeerDataOperation = async (
+  wbot: Session,
+  pdoMessage: any
+): Promise<string> => {
+  const me = wbot.user;
+  if (!me?.id) throw new AppError("Not authenticated");
+
+  const targetJid = jidNormalizedUser(me.lid || me.id);
+
+  const protocolMessage = {
+    protocolMessage: {
+      peerDataOperationRequestMessage: pdoMessage,
+      type:
+        proto.Message.ProtocolMessage.Type.PEER_DATA_OPERATION_REQUEST_MESSAGE
+    }
+  };
+
+  return (wbot as any).relayMessage(targetJid, protocolMessage, {
+    additionalAttributes: {
+      category: "peer",
+      push_priority: "high_force"
+    }
+  });
+};
+
   // If store has fewer messages than limit, trigger on-demand sync from phone
-  if (
-    messagesFromStore.length < limit &&
-    typeof (wbot as any).fetchMessageHistory === "function"
-  ) {
+  if (messagesFromStore.length < limit) {
     try {
       const oldest = messagesFromStore[0];
-      if (oldest?.key && oldest.messageTimestamp) {
-        await (wbot as any).fetchMessageHistory(
-          limit,
-          oldest.key,
-          Number(oldest.messageTimestamp)
-        );
-      } else {
-        await (wbot as any).fetchMessageHistory(
-          limit,
-          { remoteJid: matchedJid || normalizedChatId, id: "", fromMe: false },
-          Date.now()
-        );
-      }
+      const pdoChat = {
+        peerDataOperationRequestType:
+          proto.Message.PeerDataOperationRequestType.HISTORY_SYNC_ON_DEMAND,
+        historySyncOnDemandRequest: {
+          chatJid: matchedJid || normalizedChatId,
+          oldestMsgFromMe: oldest ? Boolean(oldest.key?.fromMe) : false,
+          oldestMsgId: oldest?.key?.id || undefined,
+          oldestMsgTimestampMs: oldest?.messageTimestamp
+            ? Number(oldest.messageTimestamp)
+            : undefined,
+          onDemandMsgCount: limit
+        }
+      };
+
+      await sendPeerDataOperation(wbot, pdoChat);
+
+      const pdoFull = {
+        peerDataOperationRequestType:
+          proto.Message.PeerDataOperationRequestType.FULL_HISTORY_SYNC_ON_DEMAND,
+        fullHistorySyncOnDemandRequest: {
+          requestMetadata: {},
+          historySyncConfig: {
+            fullSyncDaysLimit: 365,
+            fullSyncSizeMbLimit: 100,
+            storageQuotaMb: 1024,
+            inlineInitialPayloadInE2EeMsg: false
+          }
+        }
+      };
+
+      await sendPeerDataOperation(wbot, pdoFull);
+      logger.info(
+        `[SYNC] Sent history on demand peer requests for ${
+          matchedJid || normalizedChatId
+        }`
+      );
     } catch (e) {
-      // on-demand sync request sent
+      // ignore on-demand peer message errors
     }
   }
 

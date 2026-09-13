@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -37,8 +38,23 @@ const ListMessagesService = async ({
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 
+  let ticketIds: number[] = [+ticketId];
+  if (ticket.contactId) {
+    const contactTickets = await Ticket.findAll({
+      where: {
+        contactId: ticket.contactId,
+        whatsappId: ticket.whatsappId
+      },
+      attributes: ["id"]
+    });
+    ticketIds = contactTickets.map(t => t.id);
+    if (!ticketIds.includes(+ticketId)) {
+      ticketIds.push(+ticketId);
+    }
+  }
+
   const { count, rows: messages } = await Message.findAndCountAll({
-    where: { ticketId },
+    where: { ticketId: { [Op.in]: ticketIds } },
     limit,
     include: [
       "contact",
