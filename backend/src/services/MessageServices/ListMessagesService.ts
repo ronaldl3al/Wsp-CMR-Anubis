@@ -31,8 +31,7 @@ const ListMessagesService = async ({
   if (ticket.contactId) {
     const contactTickets = await Ticket.findAll({
       where: {
-        contactId: ticket.contactId,
-        whatsappId: ticket.whatsappId
+        contactId: ticket.contactId
       },
       attributes: ["id"]
     });

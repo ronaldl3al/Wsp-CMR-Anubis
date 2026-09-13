@@ -20,20 +20,26 @@ export const SyncChatHistoryService = async (
   if (!contact) return { syncedCount: 0 };
 
   try {
-    const targetNumbers = [contact.number];
-    if (
-      contact.number &&
-      contact.number.length === 10 &&
-      contact.number.startsWith("4")
-    ) {
-      targetNumbers.push(`58${contact.number}`);
-    } else if (contact.number && contact.number.startsWith("58")) {
-      targetNumbers.push(contact.number.slice(2));
+    const rawNumber = (contact.number || "").replace(/\D/g, "");
+    const targetNumbers = new Set<string>();
+
+    if (rawNumber) {
+      targetNumbers.add(rawNumber);
+      if (rawNumber.startsWith("0") && rawNumber.length === 11) {
+        targetNumbers.add(`58${rawNumber.slice(1)}`);
+        targetNumbers.add(rawNumber.slice(1));
+      } else if (rawNumber.startsWith("4") && rawNumber.length === 10) {
+        targetNumbers.add(`58${rawNumber}`);
+        targetNumbers.add(`0${rawNumber}`);
+      } else if (rawNumber.startsWith("58")) {
+        targetNumbers.add(rawNumber.slice(2));
+        targetNumbers.add(`0${rawNumber.slice(2)}`);
+      }
     }
 
     const candidateIds: string[] = [];
     if (ticket.isGroup) {
-      candidateIds.push(`${contact.number}@g.us`);
+      candidateIds.push(`${rawNumber || contact.number}@g.us`);
     } else {
       for (const num of targetNumbers) {
         if (num) {
@@ -48,8 +54,10 @@ export const SyncChatHistoryService = async (
       }
     }
 
+    const uniqueCandidates = [...new Set(candidateIds)];
     let rawMessages: any[] = [];
-    for (const chatId of candidateIds) {
+
+    for (const chatId of uniqueCandidates) {
       try {
         const msgs = await whatsappProvider.fetchChatMessages(
           ticket.whatsappId,
@@ -66,7 +74,7 @@ export const SyncChatHistoryService = async (
     }
 
     if (!rawMessages || rawMessages.length === 0) {
-      const last8 = contact.number ? contact.number.slice(-8) : "";
+      const last8 = rawNumber.length >= 8 ? rawNumber.slice(-8) : "";
       if (last8) {
         try {
           const msgs = await whatsappProvider.fetchChatMessages(
@@ -83,6 +91,16 @@ export const SyncChatHistoryService = async (
 
     let syncedCount = 0;
     let latestMessageBody = ticket.lastMessage;
+
+    // Retrieve all ticket IDs belonging to this contact for broadcast
+    const contactTickets = await Ticket.findAll({
+      where: { contactId: contact.id },
+      attributes: ["id"]
+    });
+    const ticketIdsToBroadcast = contactTickets.map(t => t.id.toString());
+    if (!ticketIdsToBroadcast.includes(ticket.id.toString())) {
+      ticketIdsToBroadcast.push(ticket.id.toString());
+    }
 
     for (const rawMsg of rawMessages) {
       if (!rawMsg.id) continue;
@@ -111,22 +129,26 @@ export const SyncChatHistoryService = async (
       syncedCount++;
       latestMessageBody = rawMsg.body || latestMessageBody;
 
-      getIO().to(ticket.id.toString()).emit("appMessage", {
-        action: "create",
-        message: created
-      });
+      for (const tId of ticketIdsToBroadcast) {
+        getIO().to(tId).emit("appMessage", {
+          action: "create",
+          message: created
+        });
+      }
     }
 
     if (syncedCount > 0) {
       await ticket.update({ lastMessage: latestMessageBody });
-      getIO()
-        .to(ticket.status)
-        .to("notification")
-        .to(ticket.id.toString())
-        .emit("ticket", {
-          action: "update",
-          ticket
-        });
+      for (const tId of ticketIdsToBroadcast) {
+        getIO()
+          .to(ticket.status)
+          .to("notification")
+          .to(tId)
+          .emit("ticket", {
+            action: "update",
+            ticket
+          });
+      }
       logger.info(
         `[SYNC] Loaded ${syncedCount} history messages for ticket #${ticket.id}`
       );

@@ -434,6 +434,39 @@ const getMessageBody = (msg: WAMessage): string => {
       return `${gmapsUrl}|${description}`;
     }
 
+    if (content?.templateMessage) {
+      const tm = content.templateMessage;
+      return (
+        tm.hydratedTemplate?.hydratedContentText ||
+        tm.hydratedFourRowTemplate?.hydratedContentText ||
+        ""
+      );
+    }
+
+    if (content?.interactiveMessage) {
+      return content.interactiveMessage.body?.text || "";
+    }
+
+    if (content?.buttonsResponseMessage) {
+      return (
+        content.buttonsResponseMessage.selectedDisplayText ||
+        content.buttonsResponseMessage.selectedButtonId ||
+        ""
+      );
+    }
+
+    if (content?.listResponseMessage) {
+      return (
+        content.listResponseMessage.title ||
+        content.listResponseMessage.description ||
+        ""
+      );
+    }
+
+    if (content?.templateButtonReplyMessage) {
+      return content.templateButtonReplyMessage.selectedDisplayText || "";
+    }
+
     return "";
   } catch (err) {
     logger.error({ info: "Error getting message body", err });
@@ -487,7 +520,12 @@ const shouldHandleMessage = (msg: WAMessage): boolean => {
     "stickerMessage",
     "locationMessage",
     "contactMessage",
-    "contactsArrayMessage"
+    "contactsArrayMessage",
+    "templateMessage",
+    "interactiveMessage",
+    "buttonsResponseMessage",
+    "listResponseMessage",
+    "templateButtonReplyMessage"
   ];
 
   if (!validTypes.includes(messageType || "")) return false;
@@ -501,7 +539,9 @@ const shouldHandleMessage = (msg: WAMessage): boolean => {
     "locationMessage",
     "conversation",
     "extendedTextMessage",
-    "contactMessage"
+    "contactMessage",
+    "templateMessage",
+    "interactiveMessage"
   ];
 
   return hasMedia(msg) || allowedFromMeTypes.includes(messageType || "");
@@ -1077,21 +1117,24 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       let synced = 0;
       for (const contact of contacts) {
         if (!contact.id) continue;
-        const isGroup = contact.id.includes("@g.us");
-        const isUser = contact.id.includes("@s.whatsapp.net");
-        const isLid = contact.id.includes("@lid");
+        const rawId = contact.id;
+        const isGroup = isJidGroup(rawId);
+        const isUser = isJidUser(rawId);
+        const isLid = isLidUser(rawId);
 
         if (!isGroup && !isUser && !isLid) continue;
 
-        const number = contact.id.replace(/[^0-9]/g, "");
-        const name = contact.name || contact.notify || number;
-        const lid = contact.lid;
+        const normalizedJid = jidNormalizedUser(rawId);
+        const userPart = normalizedJid.split("@")[0];
+        const cleanNumber = userPart.replace(/\D/g, "") || userPart;
+        const name = contact.name || contact.notify || cleanNumber;
+        const lid = isLid ? normalizedJid : contact.lid;
 
-        if (!number && !lid) continue;
+        if (!cleanNumber && !lid) continue;
 
         const whereClause: any = {};
-        if (number) {
-          whereClause.number = number;
+        if (cleanNumber) {
+          whereClause.number = cleanNumber;
         } else if (lid) {
           whereClause.lid = lid;
         }
@@ -1102,7 +1145,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         if (existing) {
           const updateData: any = {};
-          if (name && name !== number && existing.name !== name) {
+          if (name && name !== cleanNumber && existing.name !== name) {
             updateData.name = name;
           }
           if (lid && existing.lid !== lid) {
@@ -1115,7 +1158,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         } else {
           const created = await Contact.create({
             name,
-            number,
+            number: cleanNumber || (isLid ? userPart : rawId),
             lid,
             isGroup
           });
@@ -1131,6 +1174,110 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     }
   };
 
+  const syncChats = async (chatsList: any[]) => {
+    try {
+      let syncedChats = 0;
+      for (const chat of chatsList) {
+        if (!chat || !chat.id) continue;
+        const rawJid = chat.id;
+        if (isJidBroadcast(rawJid) || rawJid.endsWith("newsletter")) continue;
+
+        const normalizedJid = jidNormalizedUser(rawJid);
+        const isGroup = isJidGroup(rawJid);
+        const isLid = isLidUser(rawJid);
+        const userPart = normalizedJid.split("@")[0];
+        const cleanNumber = userPart.replace(/\D/g, "") || userPart;
+
+        if (!cleanNumber && !isLid) continue;
+
+        const whereContact: any = {};
+        if (isLid) {
+          whereContact.lid = normalizedJid;
+        } else if (cleanNumber) {
+          const orList: any[] = [{ number: cleanNumber }];
+          if (cleanNumber.length >= 8) {
+            orList.push({ number: { [Op.like]: `%${cleanNumber.slice(-8)}` } });
+          }
+          if (cleanNumber.length === 10 && cleanNumber.startsWith("4")) {
+            orList.push({ number: `58${cleanNumber}` });
+          }
+          whereContact[Op.or] = orList;
+        }
+
+        let contact = await Contact.findOne({ where: whereContact });
+        if (!contact) {
+          const chatName = chat.name || cleanNumber || rawJid;
+          contact = await Contact.create({
+            name: chatName,
+            number: cleanNumber || (isLid ? userPart : rawJid),
+            lid: isLid ? normalizedJid : undefined,
+            isGroup
+          });
+          getIO().emit("contact", { action: "create", contact });
+        }
+
+        let ticket = await Ticket.findOne({
+          where: { contactId: contact.id },
+          order: [["updatedAt", "DESC"]]
+        });
+
+        const unreadCount = Number(chat.unreadCount || 0);
+        const tsRaw = chat.conversationTimestamp ? Number(chat.conversationTimestamp) : null;
+        const chatDate = tsRaw ? new Date(tsRaw > 1000000000000 ? tsRaw : tsRaw * 1000) : new Date();
+
+        if (!ticket) {
+          ticket = await Ticket.create({
+            contactId: contact.id,
+            whatsappId: sessionId,
+            status: unreadCount > 0 ? "pending" : "closed",
+            unreadMessages: unreadCount,
+            isGroup,
+            lastMessage: "",
+            updatedAt: chatDate
+          });
+        }
+
+        // If chat has messages attached in history sync
+        if (chat.messages && Array.isArray(chat.messages) && chat.messages.length > 0) {
+          for (const item of chat.messages) {
+            const m = item.message || item;
+            if (m && m.key?.id) {
+              const exists = await Message.findByPk(m.key.id);
+              if (!exists) {
+                const body = getMessageBody(m) || "";
+                const rawTs = Number(m.messageTimestamp);
+                const mDate = rawTs ? new Date(rawTs > 1000000000000 ? rawTs : rawTs * 1000) : chatDate;
+                await Message.create({
+                  id: m.key.id,
+                  ticketId: ticket.id,
+                  contactId: m.key.fromMe ? null : contact.id,
+                  body,
+                  fromMe: Boolean(m.key.fromMe),
+                  read: true,
+                  mediaType: mapMessageType(m) || "chat",
+                  mediaUrl: null,
+                  ack: m.status ? mapMessageAck(m.status) : 0,
+                  createdAt: mDate,
+                  updatedAt: mDate
+                });
+                if (body) {
+                  await ticket.update({ lastMessage: body, updatedAt: mDate });
+                }
+              }
+            }
+          }
+        }
+
+        syncedChats++;
+      }
+      if (syncedChats > 0) {
+        logger.info(`[SYNC] Synced ${syncedChats} chats from WhatsApp.`);
+      }
+    } catch (err) {
+      logger.error({ err }, "Error syncing chats");
+    }
+  };
+
   wbot.ev.on("contacts.upsert", async contacts => {
     await syncContacts(contacts);
   });
@@ -1139,9 +1286,34 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     await syncContacts(contacts);
   });
 
-  wbot.ev.on("messaging-history.set", async ({ contacts, messages }) => {
+  wbot.ev.on("chats.upsert", async (newChats: any[]) => {
+    await syncChats(newChats);
+  });
+
+  (wbot.ev as any).on("chats.set", async ({ chats: newChats }: any) => {
+    if (newChats && newChats.length > 0) {
+      await syncChats(newChats);
+    }
+  });
+
+  (wbot.ev as any).on("messages.pdo-response", async ({ messages: pdoMessages }: any) => {
+    if (pdoMessages && pdoMessages.length > 0) {
+      logger.info(`[SYNC] Received ${pdoMessages.length} messages from PDO response.`);
+      wbot.ev.emit("messaging-history.set", {
+        chats: [],
+        contacts: [],
+        messages: pdoMessages,
+        isLatest: false
+      });
+    }
+  });
+
+  wbot.ev.on("messaging-history.set", async ({ chats, contacts, messages }: any) => {
     if (contacts && contacts.length > 0) {
       await syncContacts(contacts);
+    }
+    if (chats && chats.length > 0) {
+      await syncChats(chats);
     }
     if (messages && messages.length > 0) {
       try {
@@ -1149,106 +1321,118 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         const ticketUpdates = new Map<number, { lastMessage: string; timestamp: Date }>();
 
         for (const msg of messages) {
-          if (!msg.message || !shouldHandleMessage(msg)) continue;
-          const remoteJid = msg.key?.remoteJid || (msg as any).chatId || "";
-          if (
-            !remoteJid ||
-            isJidBroadcast(remoteJid) ||
-            remoteJid.endsWith("newsletter")
-          ) {
-            continue;
-          }
-
-          const number = remoteJid.replace(/[^0-9]/g, "");
-          const isLid = isLidUser(remoteJid);
-          const isGroup = isJidGroup(remoteJid);
-
-          if (!number && !isLid) continue;
-
-          const whereContact: any = {};
-          if (isLid) {
-            whereContact.lid = remoteJid;
-          } else if (number) {
-            const orList: any[] = [{ number }];
-            if (number.length >= 8) {
-              orList.push({ number: { [Op.like]: `%${number.slice(-8)}` } });
+          try {
+            if (!msg.message || !shouldHandleMessage(msg)) continue;
+            const rawJid = msg.key?.remoteJid || (msg as any).chatId || "";
+            if (
+              !rawJid ||
+              isJidBroadcast(rawJid) ||
+              rawJid.endsWith("newsletter")
+            ) {
+              continue;
             }
-            if (number.length === 10 && number.startsWith("4")) {
-              orList.push({ number: `58${number}` });
+
+            const normalizedJid = jidNormalizedUser(rawJid);
+            const isLid = isLidUser(rawJid);
+            const isGroup = isJidGroup(rawJid);
+            const userPart = normalizedJid.split("@")[0];
+            const cleanNumber = userPart.replace(/\D/g, "") || userPart;
+
+            if (!cleanNumber && !isLid) continue;
+
+            const whereContact: any = {};
+            if (isLid) {
+              whereContact.lid = normalizedJid;
+            } else if (cleanNumber) {
+              const orList: any[] = [{ number: cleanNumber }];
+              if (cleanNumber.length >= 8) {
+                orList.push({ number: { [Op.like]: `%${cleanNumber.slice(-8)}` } });
+              }
+              if (cleanNumber.length === 10 && cleanNumber.startsWith("4")) {
+                orList.push({ number: `58${cleanNumber}` });
+              }
+              whereContact[Op.or] = orList;
             }
-            whereContact[Op.or] = orList;
-          }
 
-          let contact = await Contact.findOne({ where: whereContact });
-          if (!contact) {
-            const pushName = msg.pushName?.trim();
-            const isValidName =
-              pushName && !/^[.\-_*~,#@!?:;'"\\/\s]+$/.test(pushName);
-            const contactName = isValidName ? pushName : (number || remoteJid);
+            let contact = await Contact.findOne({ where: whereContact });
+            if (!contact) {
+              const pushName = msg.pushName?.trim();
+              const isValidName =
+                pushName && !/^[.\-_*~,#@!?:;'"\\/\s]+$/.test(pushName);
+              const contactName = isValidName ? pushName : (cleanNumber || rawJid);
 
-            contact = await Contact.create({
-              name: contactName,
-              number: number || "",
-              lid: isLid ? remoteJid : undefined,
-              isGroup
+              contact = await Contact.create({
+                name: contactName,
+                number: cleanNumber || (isLid ? userPart : rawJid),
+                lid: isLid ? normalizedJid : undefined,
+                isGroup
+              });
+              getIO().emit("contact", { action: "create", contact });
+            }
+
+            let ticket = await Ticket.findOne({
+              where: { contactId: contact.id },
+              order: [["updatedAt", "DESC"]]
             });
-            getIO().emit("contact", { action: "create", contact });
-          }
 
-          let ticket = await Ticket.findOne({
-            where: { contactId: contact.id },
-            order: [["updatedAt", "DESC"]]
-          });
-
-          if (!ticket) {
-            ticket = await Ticket.create({
-              contactId: contact.id,
-              whatsappId: sessionId,
-              status: "closed",
-              isGroup,
-              unreadMessages: 0
-            });
-          }
-
-          if (ticket && msg.key?.id) {
-            const rawTs = Number(msg.messageTimestamp);
-            const timestampMs =
-              rawTs > 1000000000000 ? rawTs : rawTs * 1000;
-            const createdAt = new Date(timestampMs || Date.now());
-            const body = getMessageBody(msg) || "";
-            const mediaType = mapMessageType(msg) || "chat";
-
-            const exists = await Message.findByPk(msg.key.id);
-            if (!exists) {
-              const created = await Message.create({
-                id: msg.key.id,
-                ticketId: ticket.id,
-                contactId: msg.key.fromMe ? null : contact.id,
-                body,
-                fromMe: Boolean(msg.key.fromMe),
-                read: true,
-                mediaType,
-                mediaUrl: null,
-                ack: msg.status ? mapMessageAck(msg.status) : 0,
-                createdAt,
-                updatedAt: createdAt
-              });
-
-              syncedToTickets++;
-
-              getIO().to(ticket.id.toString()).emit("appMessage", {
-                action: "create",
-                message: created
+            if (!ticket) {
+              ticket = await Ticket.create({
+                contactId: contact.id,
+                whatsappId: sessionId,
+                status: "closed",
+                isGroup,
+                unreadMessages: 0
               });
             }
 
-            const currentUpdate = ticketUpdates.get(ticket.id);
-            if (!currentUpdate || createdAt > currentUpdate.timestamp) {
-              ticketUpdates.set(ticket.id, {
-                lastMessage: body,
-                timestamp: createdAt
-              });
+            if (ticket && msg.key?.id) {
+              const rawTs = Number(msg.messageTimestamp);
+              const timestampMs =
+                rawTs > 1000000000000 ? rawTs : rawTs * 1000;
+              const createdAt = new Date(timestampMs || Date.now());
+              const body = getMessageBody(msg) || "";
+              const mediaType = mapMessageType(msg) || "chat";
+
+              const exists = await Message.findByPk(msg.key.id);
+              if (!exists) {
+                const created = await Message.create({
+                  id: msg.key.id,
+                  ticketId: ticket.id,
+                  contactId: msg.key.fromMe ? null : contact.id,
+                  body,
+                  fromMe: Boolean(msg.key.fromMe),
+                  read: true,
+                  mediaType,
+                  mediaUrl: null,
+                  ack: msg.status ? mapMessageAck(msg.status) : 0,
+                  createdAt,
+                  updatedAt: createdAt
+                });
+
+                syncedToTickets++;
+
+                const contactTickets = await Ticket.findAll({
+                  where: { contactId: contact.id },
+                  attributes: ["id"]
+                });
+                for (const ct of contactTickets) {
+                  getIO().to(ct.id.toString()).emit("appMessage", {
+                    action: "create",
+                    message: created
+                  });
+                }
+              }
+
+              const currentUpdate = ticketUpdates.get(ticket.id);
+              if (!currentUpdate || createdAt > currentUpdate.timestamp) {
+                ticketUpdates.set(ticket.id, {
+                  lastMessage: body,
+                  timestamp: createdAt
+                });
+              }
             }
+          } catch (msgErr) {
+            logger.warn({ msgErr, key: msg.key }, "Error processing single history message");
           }
         }
 
@@ -1869,52 +2053,6 @@ const sendSeen = async (sessionId: number, chatId: string): Promise<void> => {
   }
 };
 
-const fetchChatMessages = async (
-  sessionId: number,
-  chatId: string,
-  limit = 100
-): Promise<ProviderMessage[]> => {
-  const wbot = getWbot(sessionId);
-  const normalizedChatId = normalizeJid(chatId);
-  const store = wbot.store;
-
-  let matchedJid = normalizedChatId;
-  let messagesFromStore =
-    store?.messages?.[normalizedChatId]?.array || [];
-
-  if (messagesFromStore.length === 0 && store?.messages) {
-    const rawClean = chatId.replace(/[^0-9]/g, "");
-    const last8 = rawClean.slice(-8);
-
-    const candidateKeys = [
-      `${rawClean}@s.whatsapp.net`,
-      rawClean.startsWith("58")
-        ? `${rawClean.slice(2)}@s.whatsapp.net`
-        : `58${rawClean}@s.whatsapp.net`,
-      `${rawClean}@c.us`,
-      chatId.includes("@lid") ? chatId : `${rawClean}@lid`,
-      `${rawClean}@g.us`
-    ];
-
-    for (const key of candidateKeys) {
-      if (store.messages[key]?.array?.length) {
-        matchedJid = key;
-        messagesFromStore = store.messages[key].array;
-        break;
-      }
-    }
-
-    if (messagesFromStore.length === 0 && last8) {
-      const foundKey = Object.keys(store.messages).find(
-        k => k.includes(last8) && !k.endsWith("@g.us")
-      );
-      if (foundKey && store.messages[foundKey]?.array?.length) {
-        matchedJid = foundKey;
-        messagesFromStore = store.messages[foundKey].array;
-      }
-    }
-  }
-
 const sendPeerDataOperation = async (
   wbot: Session,
   pdoMessage: any
@@ -1948,7 +2086,60 @@ const sendPeerDataOperation = async (
   });
 };
 
-  // If store has fewer messages than limit, trigger on-demand sync from phone
+const fetchChatMessages = async (
+  sessionId: number,
+  chatId: string,
+  limit = 100
+): Promise<ProviderMessage[]> => {
+  const wbot = getWbot(sessionId);
+  const normalizedChatId = jidNormalizedUser(chatId);
+  const store = wbot.store;
+
+  const rawClean = chatId.replace(/[^0-9]/g, "");
+  const last8 = rawClean.length >= 8 ? rawClean.slice(-8) : "";
+
+  let matchedJid = normalizedChatId;
+  let messagesFromStore: WAMessage[] = [];
+
+  const getCandidateKeys = (): string[] => {
+    const keys: string[] = [normalizedChatId, chatId];
+    if (rawClean) {
+      keys.push(`${rawClean}@s.whatsapp.net`);
+      if (rawClean.startsWith("58")) {
+        keys.push(`${rawClean.slice(2)}@s.whatsapp.net`);
+      } else {
+        keys.push(`58${rawClean}@s.whatsapp.net`);
+      }
+      keys.push(`${rawClean}@c.us`);
+      keys.push(`${rawClean}@lid`);
+      keys.push(`${rawClean}@g.us`);
+    }
+    return [...new Set(keys)];
+  };
+
+  const findInStore = (): WAMessage[] => {
+    if (!store?.messages) return [];
+    for (const key of getCandidateKeys()) {
+      if (store.messages[key]?.array?.length) {
+        matchedJid = key;
+        return store.messages[key].array;
+      }
+    }
+    if (last8) {
+      const foundKey = Object.keys(store.messages).find(
+        k => k.includes(last8) && !k.endsWith("@g.us")
+      );
+      if (foundKey && store.messages[foundKey]?.array?.length) {
+        matchedJid = foundKey;
+        return store.messages[foundKey].array;
+      }
+    }
+    return [];
+  };
+
+  messagesFromStore = findInStore();
+
+  // If store has fewer messages than limit, request on-demand sync from WhatsApp phone
   if (messagesFromStore.length < limit) {
     try {
       const oldest = messagesFromStore[0];
@@ -1988,24 +2179,85 @@ const sendPeerDataOperation = async (
           matchedJid || normalizedChatId
         }`
       );
+
+      // AWAIT response from phone: check store every 300ms for up to 3500ms
+      const startWait = Date.now();
+      while (Date.now() - startWait < 3500) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        messagesFromStore = findInStore();
+        if (messagesFromStore.length >= limit) {
+          break;
+        }
+      }
     } catch (e) {
-      // ignore on-demand peer message errors
+      logger.warn({ err: e }, "Error requesting peer data operation history sync");
     }
   }
 
-  const messages = messagesFromStore.slice(-limit);
+  if (messagesFromStore.length > 0) {
+    const messages = messagesFromStore.slice(-limit);
+    return messages.map(msg => ({
+      id: msg.key.id || "",
+      body: getMessageBody(msg),
+      fromMe: msg.key.fromMe || false,
+      hasMedia: hasMedia(msg),
+      type: mapMessageType(msg),
+      timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) : Date.now(),
+      from: msg.key.participant || msg.key.remoteJid || "",
+      to: matchedJid || normalizedChatId,
+      ack: mapMessageAck(msg.status)
+    }));
+  }
 
-  return messages.map(msg => ({
-    id: msg.key.id || "",
-    body: getMessageBody(msg),
-    fromMe: msg.key.fromMe || false,
-    hasMedia: hasMedia(msg),
-    type: mapMessageType(msg),
-    timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) : Date.now(),
-    from: msg.key.participant || msg.key.remoteJid || "",
-    to: matchedJid || normalizedChatId,
-    ack: mapMessageAck(msg.status)
-  }));
+  // Fallback: check if messages for this contact already exist in MySQL Message table
+  try {
+    const whereContact: any = {};
+    if (rawClean) {
+      const orList: any[] = [{ number: rawClean }];
+      if (last8) {
+        orList.push({ number: { [Op.like]: `%${last8}` } });
+      }
+      if (rawClean.length === 10 && rawClean.startsWith("4")) {
+        orList.push({ number: `58${rawClean}` });
+      }
+      whereContact[Op.or] = orList;
+    } else {
+      whereContact.lid = normalizedChatId;
+    }
+
+    const contact = await Contact.findOne({ where: whereContact });
+    if (contact) {
+      const contactTickets = await Ticket.findAll({
+        where: { contactId: contact.id },
+        attributes: ["id"]
+      });
+      const tIds = contactTickets.map(t => t.id);
+      if (tIds.length > 0) {
+        const dbMsgs = await Message.findAll({
+          where: { ticketId: { [Op.in]: tIds } },
+          limit,
+          order: [["createdAt", "DESC"]]
+        });
+        if (dbMsgs.length > 0) {
+          return dbMsgs.reverse().map(m => ({
+            id: m.id,
+            body: m.body,
+            fromMe: m.fromMe,
+            hasMedia: Boolean(m.mediaUrl),
+            type: (m.mediaType || "chat") as MessageType,
+            timestamp: m.createdAt.getTime(),
+            from: m.fromMe ? "" : contact.number,
+            to: m.fromMe ? contact.number : "",
+            ack: mapMessageAck(m.ack)
+          }));
+        }
+      }
+    }
+  } catch (err) {
+    logger.debug({ err }, "Error querying fallback messages from DB");
+  }
+
+  return [];
 };
 
 export const WhaileysProvider: WhatsappProvider = {
