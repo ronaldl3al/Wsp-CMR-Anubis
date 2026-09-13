@@ -32,10 +32,12 @@ import { LRUCache } from "lru-cache";
 import { Boom } from "@hapi/boom";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import NodeCache from "node-cache";
-
+import { resolve } from "path";
+import { Op } from "sequelize";
 import Whatsapp from "../../../models/Whatsapp";
 import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
+import Ticket from "../../../models/Ticket";
 import { getIO } from "../../../libs/socket";
 import { logger } from "../../../utils/logger";
 import AppError from "../../../errors/AppError";
@@ -951,6 +953,18 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   const store = makeInMemoryStore({ logger: whaileyLogger });
   stores.set(sessionId, store);
 
+  const storeFilePath = resolve(__dirname, "..", "..", "..", "..", `baileys_store_${sessionId}.json`);
+  try {
+    store.readFromFile(storeFilePath);
+    logger.info(`[STORE] Loaded Baileys store from ${storeFilePath}`);
+  } catch {}
+
+  setInterval(() => {
+    try {
+      store.writeToFile(storeFilePath);
+    } catch {}
+  }, 20000);
+
   let waVersionToUse: WAVersion | undefined;
 
   if (process.env.WA_SOCKET_VERSION) {
@@ -1131,29 +1145,70 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     }
     if (messages && messages.length > 0) {
       try {
-        const recentMessages = messages.slice(-150);
-        for (const msg of recentMessages) {
+        let syncedToTickets = 0;
+        for (const msg of messages) {
           if (!msg.message || !shouldHandleMessage(msg)) continue;
-          try {
-            const {
-              messagePayload,
-              contactPayload,
-              contextPayload,
-              mediaPayload
-            } = await getMessageData(msg, wbot);
-            await handleMessage(
-              messagePayload,
-              contactPayload,
-              contextPayload,
-              mediaPayload
-            );
-          } catch {
-            // ignore individual message failures
+          const remoteJid = msg.key.remoteJid || "";
+          const number = remoteJid.replace(/[^0-9]/g, "");
+          const isLid = isLidUser(remoteJid);
+
+          const whereContact: any = {};
+          if (isLid) {
+            whereContact.lid = remoteJid;
+          } else if (number) {
+            whereContact[Op.or] = [
+              { number },
+              number.length >= 8
+                ? { number: { [Op.like]: `%${number.slice(-8)}` } }
+                : { number }
+            ];
+          }
+
+          const contact = await Contact.findOne({ where: whereContact });
+          if (!contact) continue;
+
+          const ticket = await Ticket.findOne({
+            where: { contactId: contact.id },
+            order: [["updatedAt", "DESC"]]
+          });
+
+          if (ticket && msg.key.id) {
+            const exists = await Message.findByPk(msg.key.id);
+            if (!exists) {
+              const createdAt = msg.messageTimestamp
+                ? new Date(Number(msg.messageTimestamp) * 1000)
+                : new Date();
+              const body = getMessageBody(msg) || "";
+              const mediaType = mapMessageType(msg) || "chat";
+
+              const created = await Message.create({
+                id: msg.key.id,
+                ticketId: ticket.id,
+                contactId: msg.key.fromMe ? null : contact.id,
+                body,
+                fromMe: Boolean(msg.key.fromMe),
+                read: true,
+                mediaType,
+                mediaUrl: null,
+                ack: msg.status ? mapMessageAck(msg.status) : 0,
+                createdAt,
+                updatedAt: createdAt
+              });
+
+              syncedToTickets++;
+
+              getIO().to(ticket.id.toString()).emit("appMessage", {
+                action: "create",
+                message: created
+              });
+            }
           }
         }
-        logger.info(
-          `[SYNC] Processed ${recentMessages.length} history messages from WhatsApp.`
-        );
+        if (syncedToTickets > 0) {
+          logger.info(
+            `[SYNC] Synced ${syncedToTickets} history messages to existing tickets.`
+          );
+        }
       } catch (err) {
         logger.error({ err }, "Error processing history messages");
       }
@@ -1754,11 +1809,70 @@ const fetchChatMessages = async (
   limit = 100
 ): Promise<ProviderMessage[]> => {
   const wbot = getWbot(sessionId);
-
   const normalizedChatId = normalizeJid(chatId);
+  const store = wbot.store;
 
-  const messagesFromStore =
-    wbot.store?.messages?.[normalizedChatId]?.array || [];
+  let matchedJid = normalizedChatId;
+  let messagesFromStore =
+    store?.messages?.[normalizedChatId]?.array || [];
+
+  if (messagesFromStore.length === 0 && store?.messages) {
+    const rawClean = chatId.replace(/[^0-9]/g, "");
+    const last8 = rawClean.slice(-8);
+
+    const candidateKeys = [
+      `${rawClean}@s.whatsapp.net`,
+      rawClean.startsWith("58")
+        ? `${rawClean.slice(2)}@s.whatsapp.net`
+        : `58${rawClean}@s.whatsapp.net`,
+      `${rawClean}@c.us`,
+      chatId.includes("@lid") ? chatId : `${rawClean}@lid`,
+      `${rawClean}@g.us`
+    ];
+
+    for (const key of candidateKeys) {
+      if (store.messages[key]?.array?.length) {
+        matchedJid = key;
+        messagesFromStore = store.messages[key].array;
+        break;
+      }
+    }
+
+    if (messagesFromStore.length === 0 && last8) {
+      const foundKey = Object.keys(store.messages).find(
+        k => k.includes(last8) && !k.endsWith("@g.us")
+      );
+      if (foundKey && store.messages[foundKey]?.array?.length) {
+        matchedJid = foundKey;
+        messagesFromStore = store.messages[foundKey].array;
+      }
+    }
+  }
+
+  // If store has fewer messages than limit, trigger on-demand sync from phone
+  if (
+    messagesFromStore.length < limit &&
+    typeof (wbot as any).fetchMessageHistory === "function"
+  ) {
+    try {
+      const oldest = messagesFromStore[0];
+      if (oldest?.key && oldest.messageTimestamp) {
+        await (wbot as any).fetchMessageHistory(
+          limit,
+          oldest.key,
+          Number(oldest.messageTimestamp)
+        );
+      } else {
+        await (wbot as any).fetchMessageHistory(
+          limit,
+          { remoteJid: matchedJid || normalizedChatId, id: "", fromMe: false },
+          Date.now()
+        );
+      }
+    } catch (e) {
+      // on-demand sync request sent
+    }
+  }
 
   const messages = messagesFromStore.slice(-limit);
 
@@ -1770,7 +1884,7 @@ const fetchChatMessages = async (
     type: mapMessageType(msg),
     timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) : Date.now(),
     from: msg.key.participant || msg.key.remoteJid || "",
-    to: normalizedChatId,
+    to: matchedJid || normalizedChatId,
     ack: mapMessageAck(msg.status)
   }));
 };

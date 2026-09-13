@@ -10,6 +10,7 @@ import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
+import SyncChatHistoryService from "../services/TicketServices/SyncChatHistoryService";
 import formatBody from "../helpers/Mustache";
 
 type IndexQuery = {
@@ -151,4 +152,14 @@ export const closeAll = async (
   io.emit("ticket", { action: "refresh" });
 
   return res.status(200).json({ count: tickets.length });
+};
+
+export const syncHistory = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { ticketId } = req.params;
+  const ticket = await ShowTicketService(ticketId);
+  const result = await SyncChatHistoryService(ticket);
+  return res.status(200).json(result);
 };

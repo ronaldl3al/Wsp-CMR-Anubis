@@ -2,8 +2,9 @@ import React, { useContext, useState } from "react";
 import { useHistory } from "react-router-dom";
 
 import { makeStyles } from "@material-ui/core/styles";
-import { IconButton } from "@material-ui/core";
+import { IconButton, Tooltip } from "@material-ui/core";
 import { MoreVert, Replay } from "@material-ui/icons";
+import { toast } from "react-toastify";
 
 import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
@@ -29,6 +30,7 @@ const TicketActionButtons = ({ ticket }) => {
 	const history = useHistory();
 	const [anchorEl, setAnchorEl] = useState(null);
 	const [loading, setLoading] = useState(false);
+	const [syncing, setSyncing] = useState(false);
 	const ticketOptionsMenuOpen = Boolean(anchorEl);
 	const { user } = useContext(AuthContext);
 
@@ -38,6 +40,21 @@ const TicketActionButtons = ({ ticket }) => {
 
 	const handleCloseTicketOptionsMenu = e => {
 		setAnchorEl(null);
+	};
+
+	const handleSyncHistory = async () => {
+		setSyncing(true);
+		try {
+			const { data } = await api.post(`/tickets/${ticket.id}/sync-history`);
+			toast.success(
+				data.syncedCount > 0
+					? `Se sincronizaron ${data.syncedCount} mensajes del historial`
+					: "Historial de WhatsApp verificado"
+			);
+		} catch (err) {
+			toastError(err);
+		}
+		setSyncing(false);
 	};
 
 	const handleUpdateTicketStatus = async (e, status, userId) => {
@@ -62,6 +79,19 @@ const TicketActionButtons = ({ ticket }) => {
 
 	return (
 		<div className={classes.actionButtons}>
+			<Tooltip title="Cargar historial desde WhatsApp">
+				<span>
+					<ButtonWithSpinner
+						loading={syncing}
+						startIcon={<Replay />}
+						size="small"
+						variant="outlined"
+						onClick={handleSyncHistory}
+					>
+						Cargar Historial
+					</ButtonWithSpinner>
+				</span>
+			</Tooltip>
 			{ticket.status === "closed" && (
 				<ButtonWithSpinner
 					loading={loading}

@@ -2,6 +2,7 @@ import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import ShowTicketService from "../TicketServices/ShowTicketService";
+import SyncChatHistoryService from "../TicketServices/SyncChatHistoryService";
 
 interface Request {
   ticketId: string;
@@ -25,7 +26,14 @@ const ListMessagesService = async ({
     throw new AppError("ERR_NO_TICKET_FOUND", 404);
   }
 
-  // await setMessagesAsRead(ticket);
+  // If no messages exist in DB for this ticket and it's the first page, sync history from WhatsApp
+  if (+pageNumber === 1) {
+    const existingCount = await Message.count({ where: { ticketId } });
+    if (existingCount === 0) {
+      await SyncChatHistoryService(ticket);
+    }
+  }
+
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 

@@ -1,9 +1,10 @@
+import { Op } from "sequelize";
 import AppError from "../../errors/AppError";
-import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import Ticket from "../../models/Ticket";
 import User from "../../models/User";
 import ShowContactService from "../ContactServices/ShowContactService";
+import SyncChatHistoryService from "./SyncChatHistoryService";
 
 interface Request {
   contactId: number;
@@ -20,7 +21,19 @@ const CreateTicketService = async ({
 }: Request): Promise<Ticket> => {
   const defaultWhatsapp = await GetDefaultWhatsApp(userId);
 
-  await CheckContactOpenTickets(contactId, defaultWhatsapp.id);
+  const existingTicket = await Ticket.findOne({
+    where: {
+      contactId,
+      whatsappId: defaultWhatsapp.id,
+      status: { [Op.or]: ["open", "pending"] }
+    },
+    include: ["contact"]
+  });
+
+  if (existingTicket) {
+    await SyncChatHistoryService(existingTicket);
+    return existingTicket;
+  }
 
   const { isGroup } = await ShowContactService(contactId);
 
@@ -42,6 +55,8 @@ const CreateTicketService = async ({
   if (!ticket) {
     throw new AppError("ERR_CREATING_TICKET");
   }
+
+  await SyncChatHistoryService(ticket);
 
   return ticket;
 };

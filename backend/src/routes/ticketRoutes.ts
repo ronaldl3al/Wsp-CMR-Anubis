@@ -13,6 +13,12 @@ ticketRoutes.post("/tickets", isAuth, TicketController.store);
 
 ticketRoutes.post("/tickets/closeAll", isAuth, TicketController.closeAll);
 
+ticketRoutes.post(
+  "/tickets/:ticketId/sync-history",
+  isAuth,
+  TicketController.syncHistory
+);
+
 ticketRoutes.put("/tickets/:ticketId", isAuth, TicketController.update);
 
 ticketRoutes.delete("/tickets/:ticketId", isAuth, TicketController.remove);
