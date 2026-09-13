@@ -42,7 +42,7 @@ export interface WhatsappProvider {
   ): Promise<ProviderMessage[]>;
 }
 
-const provider = process.env.WHATSAPP_PROVIDER || "wwebjs";
+const provider = process.env.WHATSAPP_PROVIDER || "whaileys";
 
 const providersMap: Record<string, WhatsappProvider> = {
   wwebjs: WhatsappWebJsProvider,

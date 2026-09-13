@@ -492,9 +492,15 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         sessions.push(wbot);
       }
 
+      const updatedWhatsapp = await Whatsapp.findByPk(whatsapp.id);
+
       io.emit("whatsappSession", {
         action: "update",
-        session: whatsapp
+        session: updatedWhatsapp || whatsapp
+      });
+      io.emit("whatsapp", {
+        action: "update",
+        whatsapp: updatedWhatsapp || whatsapp
       });
     });
 
@@ -532,9 +538,15 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           retries: 0
         });
 
+        const updatedWhatsapp = await Whatsapp.findByPk(whatsapp.id);
+
         io.emit("whatsappSession", {
           action: "update",
-          session: whatsapp
+          session: updatedWhatsapp || whatsapp
+        });
+        io.emit("whatsapp", {
+          action: "update",
+          whatsapp: updatedWhatsapp || whatsapp
         });
 
         const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
@@ -629,6 +641,21 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     await wbot.initialize();
   } catch (err) {
     logger.error(err, "Error on whatsapp session");
+    try {
+      await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+      const updatedWhatsapp = await Whatsapp.findByPk(whatsapp.id);
+      const io = getIO();
+      io.emit("whatsappSession", {
+        action: "update",
+        session: updatedWhatsapp || whatsapp
+      });
+      io.emit("whatsapp", {
+        action: "update",
+        whatsapp: updatedWhatsapp || whatsapp
+      });
+    } catch (e) {
+      // ignore
+    }
   }
 };
 

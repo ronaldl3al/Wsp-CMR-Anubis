@@ -39,6 +39,7 @@ ENV CHROME_BIN=/usr/bin/google-chrome-stable
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV WHATSAPP_PROVIDER=whaileys
 
 WORKDIR /app
 
