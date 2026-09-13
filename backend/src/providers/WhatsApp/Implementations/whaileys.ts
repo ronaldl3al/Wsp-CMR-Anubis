@@ -742,10 +742,14 @@ const convertToMediaPayload = async (
 ): Promise<MediaPayload | undefined> => {
   if (!hasMedia(msg)) return undefined;
 
-  // TODO save direct to disc using stream
   try {
+    const content = getRealMessage(msg);
+    if (!content) return undefined;
+
+    const pseudoMsg = { ...msg, message: content };
+
     const buffer = await downloadMediaMessage(
-      msg,
+      pseudoMsg,
       "buffer",
       {},
       {
@@ -754,7 +758,6 @@ const convertToMediaPayload = async (
       }
     );
 
-    const content = getRealMessage(msg);
     const messageType = getContentType(content || undefined);
     const getExtension = (mimetype: string, fallback: string): string =>
       mimetype.split("/")[1]?.split(";")[0] || fallback;

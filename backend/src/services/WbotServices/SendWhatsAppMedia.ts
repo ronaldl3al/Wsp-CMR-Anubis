@@ -21,7 +21,15 @@ const SendWhatsAppMedia = async ({
       throw new AppError("ERR_TICKET_NO_WHATSAPP");
     }
 
-    const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+    let chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+    if (ticket.contact.lid) {
+      chatId = ticket.contact.lid;
+    } else if (
+      ticket.contact.number.length >= 14 &&
+      ticket.contact.number.startsWith("70")
+    ) {
+      chatId = `${ticket.contact.number}@lid`;
+    }
 
     const hasBody = body
       ? formatBody(body as string, ticket.contact)
