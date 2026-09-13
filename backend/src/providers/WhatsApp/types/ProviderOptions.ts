@@ -9,4 +9,5 @@ export interface SendMediaOptions {
   sendAudioAsVoice?: boolean;
   sendMediaAsDocument?: boolean;
   quotedMessageId?: string;
+  quotedMessageFromMe?: boolean;
 }

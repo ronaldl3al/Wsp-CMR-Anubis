@@ -1037,7 +1037,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     debouncedSaveCreds(whatsapp, state.creds);
   });
 
-  wbot.ev.on("contacts.upsert", async contacts => {
+  const syncContacts = async (contacts: any[]) => {
     try {
       let synced = 0;
       for (const contact of contacts) {
@@ -1088,9 +1088,21 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         }
         synced++;
       }
-      logger.info(`[SYNC] Successfully synced ${synced} contacts from WhatsApp phonebook.`);
+      if (synced > 0) {
+        logger.info(`[SYNC] Successfully synced ${synced} contacts from WhatsApp phonebook.`);
+      }
     } catch (err) {
       logger.error({ err }, "Error syncing contacts");
+    }
+  };
+
+  wbot.ev.on("contacts.upsert", async contacts => {
+    await syncContacts(contacts);
+  });
+
+  wbot.ev.on("messaging-history.set", async ({ contacts }) => {
+    if (contacts && contacts.length > 0) {
+      await syncContacts(contacts);
     }
   });
 
@@ -1359,7 +1371,11 @@ const sendMessage = async (
         text: body,
         contextInfo: {
           stanzaId: options.quotedMessageId,
-          participant: options.quotedMessageFromMe ? wbot.user?.id : toJid
+          participant: options.quotedMessageFromMe
+            ? wbot.user?.id
+              ? jidNormalizedUser(wbot.user.id)
+              : undefined
+            : toJid
         }
       }
     : { text: body };
@@ -1417,7 +1433,14 @@ const sendMedia = async (
   if (!mediaBuffer) throw new AppError("ERR_NO_MEDIA_DATA");
 
   const contextInfo = options?.quotedMessageId
-    ? { stanzaId: options.quotedMessageId, participant: toJid }
+    ? {
+        stanzaId: options.quotedMessageId,
+        participant: options.quotedMessageFromMe
+          ? wbot.user?.id
+            ? jidNormalizedUser(wbot.user.id)
+            : undefined
+          : toJid
+      }
     : undefined;
 
   const buildPayload = () => {

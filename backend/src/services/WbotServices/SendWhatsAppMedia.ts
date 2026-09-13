@@ -5,16 +5,20 @@ import { whatsappProvider, ProviderMessage } from "../../providers/WhatsApp";
 
 import formatBody from "../../helpers/Mustache";
 
+import Message from "../../models/Message";
+
 interface Request {
   media: Express.Multer.File;
   ticket: Ticket;
   body?: string;
+  quotedMsg?: Message;
 }
 
 const SendWhatsAppMedia = async ({
   media,
   ticket,
-  body
+  body,
+  quotedMsg
 }: Request): Promise<ProviderMessage> => {
   try {
     if (!ticket.whatsappId) {
@@ -46,7 +50,9 @@ const SendWhatsAppMedia = async ({
       sendAudioAsVoice: true,
       sendMediaAsDocument:
         media.mimetype.startsWith("image/") &&
-        !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename)
+        !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename),
+      quotedMessageId: quotedMsg?.id,
+      quotedMessageFromMe: quotedMsg?.fromMe
     };
 
     const sentMessage = await whatsappProvider.sendMedia(

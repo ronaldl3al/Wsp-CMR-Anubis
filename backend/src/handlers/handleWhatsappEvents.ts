@@ -273,7 +273,7 @@ export const handleMessage = async (
     if (mediaPayload && processedMessage.hasMedia) {
       const filename = await saveMediaFile(mediaPayload);
       messageData.mediaUrl = filename;
-      messageData.body = processedMessage.body || filename;
+      messageData.body = processedMessage.body || "";
       const [mediaType] = mediaPayload.mimetype.split("/");
       messageData.mediaType = mediaType;
     }
