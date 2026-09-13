@@ -13,7 +13,7 @@ const reducer = (state, action) => {
 
 	if (action.type === "UPDATE_WHATSAPPS") {
 		const whatsApp = action.payload;
-		const whatsAppIndex = state.findIndex(s => s.id === whatsApp.id);
+		const whatsAppIndex = state.findIndex(s => +s.id === +whatsApp?.id);
 
 		if (whatsAppIndex !== -1) {
 			const newState = [...state];
@@ -26,7 +26,7 @@ const reducer = (state, action) => {
 
 	if (action.type === "UPDATE_SESSION") {
 		const whatsApp = action.payload;
-		const whatsAppIndex = state.findIndex(s => s.id === whatsApp.id);
+		const whatsAppIndex = state.findIndex(s => +s.id === +whatsApp?.id);
 
 		if (whatsAppIndex !== -1) {
 			const newState = [...state];
@@ -47,11 +47,7 @@ const reducer = (state, action) => {
 	if (action.type === "DELETE_WHATSAPPS") {
 		const whatsAppId = action.payload;
 
-		const whatsAppIndex = state.findIndex(s => s.id === whatsAppId);
-		if (whatsAppIndex !== -1) {
-			state.splice(whatsAppIndex, 1);
-		}
-		return [...state];
+		return state.filter(s => +s.id !== +whatsAppId && s.id !== whatsAppId);
 	}
 
 	if (action.type === "RESET") {
