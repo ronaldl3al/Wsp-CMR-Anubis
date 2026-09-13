@@ -746,19 +746,26 @@ const convertToMediaPayload = async (
     const content = getRealMessage(msg);
     if (!content) return undefined;
 
-    const pseudoMsg = { ...msg, message: content };
+    const messageType = getContentType(content || undefined);
+    if (!messageType) return undefined;
 
-    const buffer = await downloadMediaMessage(
-      pseudoMsg,
-      "buffer",
-      {},
-      {
-        logger: whaileyLogger,
-        reuploadRequest: wbot.updateMediaMessage
-      }
+    const mediaMessage = content[messageType];
+    if (!mediaMessage || typeof mediaMessage !== 'object') return undefined;
+
+    let mediaTypeStr = messageType.replace("Message", "");
+    if (mediaTypeStr === "documentWithCaption") mediaTypeStr = "document";
+
+    const { downloadContentFromMessage } = require("whaileys");
+    const stream = await downloadContentFromMessage(
+      mediaMessage,
+      mediaTypeStr as any
     );
 
-    const messageType = getContentType(content || undefined);
+    let buffer = Buffer.from([]);
+    for await (const chunk of stream) {
+      buffer = Buffer.concat([buffer, chunk]);
+    }
+
     const getExtension = (mimetype: string, fallback: string): string =>
       mimetype.split("/")[1]?.split(";")[0] || fallback;
 
