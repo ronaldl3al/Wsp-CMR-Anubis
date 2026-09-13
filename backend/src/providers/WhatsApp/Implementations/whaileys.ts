@@ -1054,8 +1054,15 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         if (!number && !lid) continue;
 
+        const whereClause: any = {};
+        if (number) {
+          whereClause.number = number;
+        } else if (lid) {
+          whereClause.lid = lid;
+        }
+
         const existing = await Contact.findOne({
-          where: number ? { number } : { lid }
+          where: whereClause
         });
 
         if (existing) {
