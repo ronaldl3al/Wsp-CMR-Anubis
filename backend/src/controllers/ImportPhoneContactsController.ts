@@ -3,7 +3,7 @@ import ImportContactsService from "../services/WbotServices/ImportContactsServic
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const userId: number = parseInt(req.user.id);
-  await ImportContactsService(userId);
+  const result = await ImportContactsService(userId);
 
-  return res.status(200).json({ message: "contacts imported" });
+  return res.status(200).json({ message: "contacts imported", ...result });
 };

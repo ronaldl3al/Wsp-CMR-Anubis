@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { getIO } from "../../libs/socket";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
@@ -16,6 +17,7 @@ interface Request {
   email?: string;
   profilePicUrl?: string;
   extraInfo?: ExtraInfo[];
+  isRegisteredName?: boolean;
 }
 
 const emitContact = (action: "update" | "create", contact: Contact) => {
@@ -31,7 +33,8 @@ const CreateOrUpdateContactService = async ({
   profilePicUrl,
   isGroup,
   email = "",
-  extraInfo = []
+  extraInfo = [],
+  isRegisteredName = false
 }: Request): Promise<Contact> => {
   const number = isGroup ? rawNumber : rawNumber.replace(/[^0-9]/g, "");
   if (!number && !lid) throw new Error("Either number or lid must be provided");
@@ -39,8 +42,23 @@ const CreateOrUpdateContactService = async ({
   const isNameGarbage = !name || /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(name.trim());
   const validName = isNameGarbage ? (number || lid || "") : name.trim();
 
+  const orConditions: any[] = [];
+  if (number) {
+    orConditions.push({ number });
+    if (number.length >= 8) {
+      orConditions.push({ number: { [Op.like]: `%${number.slice(-8)}` } });
+    }
+    if (number.length === 10 && number.startsWith("4")) {
+      orConditions.push({ number: `58${number}` });
+    }
+    if (number.length === 12 && number.startsWith("58")) {
+      orConditions.push({ number: `0${number.slice(2)}` });
+      orConditions.push({ number: number.slice(2) });
+    }
+  }
+
   const [contactByNumber, contactByLid] = await Promise.all([
-    number ? Contact.findOne({ where: { number } }) : null,
+    orConditions.length > 0 ? Contact.findOne({ where: { [Op.or]: orConditions } }) : null,
     lid ? Contact.findOne({ where: { lid } }) : null
   ]);
 
@@ -59,13 +77,18 @@ const CreateOrUpdateContactService = async ({
       lid: contactByLid.lid,
       profilePicUrl: profilePicUrl || contactByNumber.profilePicUrl
     };
-    if (
-      validName &&
-      validName !== number &&
-      (contactByNumber.name === contactByNumber.number ||
-        !contactByNumber.name ||
-        /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(contactByNumber.name))
-    ) {
+    const shouldUpdateName = (currentName?: string): boolean => {
+      if (!validName || validName === number || validName === lid) return false;
+      if (isRegisteredName) return true;
+      return (
+        !currentName ||
+        currentName === number ||
+        currentName === lid ||
+        /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(currentName)
+      );
+    };
+
+    if (shouldUpdateName(contactByNumber.name)) {
       mergeUpdate.name = validName;
     }
     await contactByNumber.update(mergeUpdate);
@@ -81,18 +104,23 @@ const CreateOrUpdateContactService = async ({
     return contactByNumber;
   }
 
+  const shouldUpdateName = (currentName?: string): boolean => {
+    if (!validName || validName === number || validName === lid) return false;
+    if (isRegisteredName) return true;
+    return (
+      !currentName ||
+      currentName === number ||
+      currentName === lid ||
+      /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(currentName)
+    );
+  };
+
   if (contactByNumber) {
     const updateData: any = {
       lid: lid || contactByNumber.lid,
       profilePicUrl: profilePicUrl || contactByNumber.profilePicUrl
     };
-    if (
-      validName &&
-      (contactByNumber.name === contactByNumber.number ||
-        contactByNumber.name === contactByNumber.lid ||
-        !contactByNumber.name ||
-        /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(contactByNumber.name))
-    ) {
+    if (shouldUpdateName(contactByNumber.name)) {
       updateData.name = validName;
     }
     await contactByNumber.update(updateData);
@@ -107,13 +135,7 @@ const CreateOrUpdateContactService = async ({
       number: number || contactByLid.number,
       profilePicUrl: profilePicUrl || contactByLid.profilePicUrl
     };
-    if (
-      validName &&
-      (contactByLid.name === contactByLid.number ||
-        contactByLid.name === contactByLid.lid ||
-        !contactByLid.name ||
-        /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(contactByLid.name))
-    ) {
+    if (shouldUpdateName(contactByLid.name)) {
       updateData.name = validName;
     }
     await contactByLid.update(updateData);

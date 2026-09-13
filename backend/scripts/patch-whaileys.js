@@ -49,3 +49,10 @@ patchFile(
   `            for (const msg of newMessages) {\n                const rawJid = msg.key?.remoteJid || msg.chatId;\n                const jid = (0, WABinary_1.jidNormalizedUser)(rawJid);\n                const list = assertMessageList(jid);`,
   "whaileys make-in-memory-store.js normalize jid on messaging-history.set"
 );
+
+patchFile(
+  makeInMemoryStoreJs,
+  `        ev.on("contacts.update", updates => {\n            for (const update of updates) {\n                if (contacts[update.id]) {\n                    Object.assign(contacts[update.id], update);\n                }\n                else {\n                    logger.debug({ update }, "got update for non-existant contact");\n                }\n            }\n        });`,
+  `        ev.on("contacts.upsert", newContacts => {\n            contactsUpsert(newContacts);\n        });\n        ev.on("contacts.update", updates => {\n            for (const update of updates) {\n                if (contacts[update.id]) {\n                    Object.assign(contacts[update.id], update);\n                }\n                else {\n                    contacts[update.id] = Object.assign({}, update);\n                }\n            }\n        });`,
+  "whaileys make-in-memory-store.js listen to contacts.upsert"
+);

@@ -239,6 +239,22 @@ const Contacts = () => {
     }
   };
 
+  const handleSyncWhatsappContacts = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.post("/contacts/import");
+      toast.success(
+        `Contactos de WhatsApp sincronizados (${data.updatedCount || 0} actualizados, ${data.createdCount || 0} nuevos)`
+      );
+      dispatch({ type: "RESET" });
+      setPageNumber(1);
+      setLoading(false);
+    } catch (err) {
+      toastError(err);
+      setLoading(false);
+    }
+  };
+
   const handleDeleteAllContacts = async () => {
     try {
       setLoading(true);
@@ -326,6 +342,14 @@ const Contacts = () => {
             onClick={() => fileUploadRef.current?.click()}
           >
             Importar Google CSV
+          </Button>
+          <Button
+            variant="contained"
+            style={{ backgroundColor: "#128C7E", color: "#fff" }}
+            onClick={handleSyncWhatsappContacts}
+            startIcon={<WhatsAppIcon />}
+          >
+            Sincronizar WhatsApp
           </Button>
           <Button
             variant="contained"

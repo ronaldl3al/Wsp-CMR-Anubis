@@ -779,15 +779,35 @@ const convertToContactPayload = async (
 
   let dbContactName = "";
   try {
-    const whereClause: any = {};
-    if (number) whereClause.number = number;
-    else if (lidValue) whereClause.lid = lidValue;
+    const orConditions: any[] = [];
+    if (number) {
+      orConditions.push({ number });
+      if (number.length >= 8) {
+        orConditions.push({ number: { [Op.like]: `%${number.slice(-8)}` } });
+      }
+      if (number.length === 10 && number.startsWith("4")) {
+        orConditions.push({ number: `58${number}` });
+      }
+      if (number.length === 12 && number.startsWith("58")) {
+        orConditions.push({ number: `0${number.slice(2)}` });
+        orConditions.push({ number: number.slice(2) });
+      }
+    }
+    if (lidValue) {
+      orConditions.push({ lid: lidValue });
+    }
 
-    if (Object.keys(whereClause).length > 0) {
+    if (orConditions.length > 0) {
       const existingDb = await Contact.findOne({
-        where: whereClause
+        where: { [Op.or]: orConditions }
       });
-      if (existingDb && existingDb.name && existingDb.name !== existingDb.number && existingDb.name !== existingDb.lid) {
+      if (
+        existingDb &&
+        existingDb.name &&
+        existingDb.name !== existingDb.number &&
+        existingDb.name !== existingDb.lid &&
+        !/^[.\-_*~,#@!?:;'"\\/\s]+$/.test(existingDb.name)
+      ) {
         dbContactName = existingDb.name;
       }
     }
@@ -1134,6 +1154,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     debouncedSaveCreds(whatsapp, state.creds);
   });
 
+  const isValidContactName = (val?: string): boolean =>
+    Boolean(val && val.trim().length > 0 && !/^[.\-_*~,#@!?:;'"\\/\s]+$/.test(val.trim()));
+
   const syncContacts = async (contacts: any[]) => {
     try {
       let synced = 0;
@@ -1149,37 +1172,66 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         const normalizedJid = jidNormalizedUser(rawId);
         const userPart = normalizedJid.split("@")[0];
         const cleanNumber = userPart.replace(/\D/g, "") || userPart;
-        const name = contact.name || contact.notify || cleanNumber;
         const lid = isLid ? normalizedJid : contact.lid;
 
         if (!cleanNumber && !lid) continue;
 
-        const whereClause: any = {};
+        const registeredName = isValidContactName(contact.name) ? contact.name.trim() : "";
+        const fallbackNotify = isValidContactName(contact.notify) ? contact.notify.trim() : "";
+        const fallbackVerified = isValidContactName(contact.verifiedName) ? contact.verifiedName.trim() : "";
+
+        const orConditions: any[] = [];
         if (cleanNumber) {
-          whereClause.number = cleanNumber;
-        } else if (lid) {
-          whereClause.lid = lid;
+          orConditions.push({ number: cleanNumber });
+          if (cleanNumber.length >= 8) {
+            orConditions.push({ number: { [Op.like]: `%${cleanNumber.slice(-8)}` } });
+          }
+          if (cleanNumber.length === 10 && cleanNumber.startsWith("4")) {
+            orConditions.push({ number: `58${cleanNumber}` });
+          }
+          if (cleanNumber.length === 12 && cleanNumber.startsWith("58")) {
+            orConditions.push({ number: `0${cleanNumber.slice(2)}` });
+            orConditions.push({ number: cleanNumber.slice(2) });
+          }
+        }
+        if (lid) {
+          orConditions.push({ lid });
         }
 
         const existing = await Contact.findOne({
-          where: whereClause
+          where: { [Op.or]: orConditions }
         });
 
         if (existing) {
           const updateData: any = {};
-          if (name && name !== cleanNumber && existing.name !== name) {
-            updateData.name = name;
+
+          if (registeredName && existing.name !== registeredName) {
+            updateData.name = registeredName;
+          } else if (!registeredName && (fallbackVerified || fallbackNotify)) {
+            const existingIsPlaceholder =
+              !existing.name ||
+              existing.name === existing.number ||
+              existing.name === existing.lid ||
+              !isValidContactName(existing.name);
+
+            if (existingIsPlaceholder) {
+              updateData.name = fallbackVerified || fallbackNotify;
+            }
           }
+
           if (lid && existing.lid !== lid) {
             updateData.lid = lid;
           }
+
           if (Object.keys(updateData).length > 0) {
             await existing.update(updateData);
             getIO().emit("contact", { action: "update", contact: existing });
           }
         } else {
+          const bestName =
+            registeredName || fallbackVerified || fallbackNotify || cleanNumber || (isLid ? userPart : rawId);
           const created = await Contact.create({
-            name,
+            name: bestName,
             number: cleanNumber || (isLid ? userPart : rawId),
             lid,
             isGroup
@@ -1300,12 +1352,26 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     }
   };
 
-  wbot.ev.on("contacts.upsert", async contacts => {
-    await syncContacts(contacts);
+  wbot.ev.on("contacts.upsert", async (newContacts: any[]) => {
+    if (wbot.store?.contacts && Array.isArray(newContacts)) {
+      for (const c of newContacts) {
+        if (c?.id) {
+          wbot.store.contacts[c.id] = Object.assign(wbot.store.contacts[c.id] || {}, c);
+        }
+      }
+    }
+    await syncContacts(newContacts);
   });
 
-  wbot.ev.on("contacts.update", async contacts => {
-    await syncContacts(contacts);
+  wbot.ev.on("contacts.update", async (updates: any[]) => {
+    if (wbot.store?.contacts && Array.isArray(updates)) {
+      for (const u of updates) {
+        if (u?.id) {
+          wbot.store.contacts[u.id] = Object.assign(wbot.store.contacts[u.id] || {}, u);
+        }
+      }
+    }
+    await syncContacts(updates);
   });
 
   wbot.ev.on("chats.upsert", async (newChats: any[]) => {
@@ -1332,6 +1398,13 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   wbot.ev.on("messaging-history.set", async ({ chats, contacts, messages }: any) => {
     if (contacts && contacts.length > 0) {
+      if (wbot.store?.contacts && Array.isArray(contacts)) {
+        for (const c of contacts) {
+          if (c?.id) {
+            wbot.store.contacts[c.id] = Object.assign(wbot.store.contacts[c.id] || {}, c);
+          }
+        }
+      }
       await syncContacts(contacts);
     }
     if (chats && chats.length > 0) {
@@ -1650,6 +1723,43 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
 
       logger.info({ info: "Session connected", sessionId });
+
+      if (typeof (wbot as any).resyncAppState === "function") {
+        try {
+          (wbot as any)
+            .resyncAppState(
+              [
+                "critical_block",
+                "critical_unblock_low",
+                "regular_high",
+                "regular_low",
+                "regular"
+              ],
+              false
+            )
+            .catch((e: any) => {
+              logger.debug({ info: "Non-critical error in resyncAppState", err: e });
+            });
+        } catch (e) {
+          logger.debug({ info: "Could not trigger resyncAppState", err: e });
+        }
+      }
+
+      setTimeout(async () => {
+        try {
+          if (wbot.store?.contacts) {
+            const allContacts = Object.values(wbot.store.contacts);
+            if (allContacts.length > 0) {
+              logger.info(
+                `[SYNC] Post-connect syncing ${allContacts.length} contacts from store on session ${sessionId}`
+              );
+              await syncContacts(allContacts);
+            }
+          }
+        } catch (e) {
+          logger.error({ info: "Error syncing store contacts post-connect", err: e });
+        }
+      }, 4000);
     }
 
     if (qr !== undefined) {
@@ -2090,7 +2200,7 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
         contacts.push({
           id: contact.id,
           number: jidNormalizedUser(contact.id).replace("@s.whatsapp.net", ""),
-          name: contact.name || contact.notify || "",
+          name: contact.name || contact.verifiedName || contact.notify || "",
           pushname: contact.notify || "",
           isGroup: false
         });
