@@ -195,19 +195,6 @@ const Contacts = () => {
     setPageNumber(1);
   };
 
-  const handleimportContact = async () => {
-    try {
-      setLoading(true);
-      await api.post("/contacts/import");
-      dispatch({ type: "RESET" });
-      setPageNumber(1);
-      toast.success(i18n.t("contacts.toasts.importSuccess") || "Contactos importados con éxito");
-      setLoading(false);
-    } catch (err) {
-      toastError(err);
-      setLoading(false);
-    }
-  };
 
   const fileUploadRef = useRef(null);
 
@@ -292,19 +279,15 @@ const Contacts = () => {
             ? `${i18n.t("contacts.confirmationModal.deleteTitle")} ${
                 deletingContact.name
               }?`
-            : `${i18n.t("contacts.confirmationModal.importTitlte")}`
+            : ""
         }
         open={confirmOpen}
         onClose={setConfirmOpen}
-        onConfirm={(e) =>
-          deletingContact
-            ? handleDeleteContact(deletingContact.id)
-            : handleimportContact()
+        onConfirm={() =>
+          deletingContact && handleDeleteContact(deletingContact.id)
         }
       >
-        {deletingContact
-          ? `${i18n.t("contacts.confirmationModal.deleteMessage")}`
-          : `${i18n.t("contacts.confirmationModal.importMessage")}`}
+        {`${i18n.t("contacts.confirmationModal.deleteMessage")}`}
       </ConfirmationModal>
       <ConfirmationModal
         title="¿Eliminar TODOS los contactos?"
@@ -364,13 +347,6 @@ const Contacts = () => {
             onClick={() => setConfirmDeleteAllOpen(true)}
           >
             Borrar Todos
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={(e) => setConfirmOpen(true)}
-          >
-            {i18n.t("contacts.buttons.import")}
           </Button>
           <Button
             variant="contained"

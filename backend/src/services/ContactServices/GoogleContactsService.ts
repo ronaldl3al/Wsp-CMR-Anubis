@@ -107,23 +107,39 @@ export const ImportGoogleContactsService = async (
     return { createdCount: 0, updatedCount: 0, total: 0 };
   }
 
-  const header = parseCsvLine(lines[0]);
+  const cleanHeader = parseCsvLine(lines[0]).map(h =>
+    h.replace(/^\uFEFF/, "").trim()
+  );
 
-  let firstNameIdx = header.findIndex(h =>
+  let firstNameIdx = cleanHeader.findIndex(h =>
     /first\s*name/i.test(h) || /^nombre/i.test(h)
   );
-  let middleNameIdx = header.findIndex(h => /middle\s*name/i.test(h));
-  let lastNameIdx = header.findIndex(h =>
+  let middleNameIdx = cleanHeader.findIndex(h => /middle\s*name/i.test(h));
+  let lastNameIdx = cleanHeader.findIndex(h =>
     /last\s*name/i.test(h) || /^apellido/i.test(h)
   );
-  let phoneIdx = header.findIndex(h =>
-    /phone\s*1\s*-\s*value/i.test(h) || /phone|tel[eé]fono|celular|mobile/i.test(h)
+
+  // Priority 1: Match "Phone 1 - Value" specifically (avoids matching "Phone 1 - Label"!)
+  let phoneIdx = cleanHeader.findIndex(
+    h => /value/i.test(h) && /phone|tel/i.test(h)
   );
 
-  // Default fallback if header indices weren't matched
+  // Priority 2: Match column with "phone" that does NOT have "label" or "type"
+  if (phoneIdx === -1) {
+    phoneIdx = cleanHeader.findIndex(
+      h =>
+        /phone|tel[eé]fono|celular|mobile/i.test(h) &&
+        !/label|type|etiqueta|tipo/i.test(h)
+    );
+  }
+
+  // Priority 3: Fallback to last column
+  if (phoneIdx === -1) {
+    phoneIdx = cleanHeader.length - 1;
+  }
+
   if (firstNameIdx === -1) firstNameIdx = 0;
   if (lastNameIdx === -1) lastNameIdx = 2;
-  if (phoneIdx === -1) phoneIdx = header.length - 1;
 
   let createdCount = 0;
   let updatedCount = 0;
@@ -141,7 +157,20 @@ export const ImportGoogleContactsService = async (
       .join(" ")
       .trim();
 
-    const rawPhone = row[phoneIdx] || "";
+    // Try targeted column first
+    let rawPhone = row[phoneIdx] || "";
+
+    // If targeted column does not have at least 7 digits, search the entire row
+    if (rawPhone.replace(/\D/g, "").length < 7) {
+      for (let c = row.length - 1; c >= 0; c--) {
+        const digits = (row[c] || "").replace(/\D/g, "");
+        if (digits.length >= 7) {
+          rawPhone = row[c];
+          break;
+        }
+      }
+    }
+
     if (!rawPhone) continue;
 
     // Handle multiple numbers separated by ':::' or '/'
@@ -152,27 +181,34 @@ export const ImportGoogleContactsService = async (
       if (!cleanNumber || cleanNumber.length < 7) continue;
 
       try {
-        const whereClause: any = {
-          [Op.or]: [
-            { number: cleanNumber },
-            cleanNumber.length >= 8
-              ? { number: { [Op.like]: `%${cleanNumber.slice(-8)}` } }
-              : { number: cleanNumber }
-          ]
-        };
+        const last8 = cleanNumber.slice(-8);
+        const orConditions: any[] = [
+          { number: cleanNumber },
+          { number: { [Op.like]: `%${last8}` } }
+        ];
+        if (cleanNumber.length === 10 && cleanNumber.startsWith("4")) {
+          orConditions.push({ number: `58${cleanNumber}` });
+        }
 
-        const existing = await Contact.findOne({ where: whereClause });
+        const existing = await Contact.findOne({
+          where: { [Op.or]: orConditions }
+        });
 
         if (existing) {
-          if (fullName && fullName !== cleanNumber && existing.name !== fullName) {
+          if (fullName && existing.name !== fullName) {
             await existing.update({ name: fullName });
             updatedCount++;
             getIO().emit("contact", { action: "update", contact: existing });
           }
         } else {
+          const finalNum =
+            cleanNumber.length === 10 && cleanNumber.startsWith("4")
+              ? `58${cleanNumber}`
+              : cleanNumber;
+
           const created = await Contact.create({
-            name: fullName || cleanNumber,
-            number: cleanNumber,
+            name: fullName || finalNum,
+            number: finalNum,
             isGroup: false
           });
           createdCount++;
