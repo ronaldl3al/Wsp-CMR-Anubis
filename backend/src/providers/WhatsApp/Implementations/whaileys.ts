@@ -231,15 +231,21 @@ const saveSessionCreds = async (
   creds: AuthenticationCreds
 ) => {
   try {
-    await whatsapp.update({
-      session: JSON.stringify(creds, BufferJSON.replacer),
-      status: "CONNECTED",
-      qrcode: ""
-    });
+    const isPaired = Boolean(creds?.me?.id);
+    const updateData: any = {
+      session: JSON.stringify(creds, BufferJSON.replacer)
+    };
+    if (isPaired) {
+      updateData.status = "CONNECTED";
+      updateData.qrcode = "";
+      updateData.retries = 0;
+    }
+    await whatsapp.update(updateData);
 
     logger.debug({
       info: "Creds saved to database",
-      whatsappId: whatsapp.id
+      whatsappId: whatsapp.id,
+      isPaired
     });
   } catch (err) {
     logger.error({
@@ -999,10 +1005,6 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   const io = getIO();
 
   try {
-    if (!whatsapp.session) {
-      await clearSessionKeys(sessionId);
-    }
-
     const { state } = await useSessionAuthState(whatsapp);
   const store = makeInMemoryStore({ logger: whaileyLogger });
   stores.set(sessionId, store);
@@ -1061,7 +1063,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   const connOptions: UserFacingSocketConfig = {
     logger: whaileyLogger,
-    browser: Browsers.macOS("Desktop"),
+    browser: Browsers.ubuntu("Chrome"),
     emitOwnEvents: true,
     auth: {
       creds: state.creds,
@@ -1084,7 +1086,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         jid === "status@broadcast"
       );
     },
-    syncFullHistory: true,
+    syncFullHistory: false,
     version: waVersionToUse,
     msgRetryCounterMap,
     markOnlineOnConnect: false,
@@ -1603,16 +1605,18 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       if (shouldReconnect) {
         await flushPendingCredsSave(sessionId);
 
-        await whatsapp.update({ status: "OPENING" });
-        const updatedWhatsapp = await Whatsapp.findByPk(sessionId);
-        io.emit("whatsappSession", {
-          action: "update",
-          session: updatedWhatsapp || whatsapp
-        });
-        io.emit("whatsapp", {
-          action: "update",
-          whatsapp: updatedWhatsapp || whatsapp
-        });
+        const currentWp = await Whatsapp.findByPk(sessionId);
+        if (currentWp && currentWp.status !== "qrcode") {
+          await currentWp.update({ status: "OPENING" });
+          io.emit("whatsappSession", {
+            action: "update",
+            session: currentWp
+          });
+          io.emit("whatsapp", {
+            action: "update",
+            whatsapp: currentWp
+          });
+        }
         logger.info({
           info: "Connection closed, reconnecting...",
           sessionId,
