@@ -606,9 +606,19 @@ const convertToContactPayload = async (
     keyExt.peerRecipientPn || keyExt.peer_recipient_pn
   ];
 
-  const preferPn = pnCandidates.find(
+  let preferPn = pnCandidates.find(
     v => typeof v === "string" && /@s\.whatsapp\.net$/i.test(v)
   );
+
+  let recoveredContact;
+  if (wbot.store?.contacts && resolvedJid.includes("@lid")) {
+    recoveredContact = Object.values(wbot.store.contacts).find(
+      c => c.lid === resolvedJid || c.id === resolvedJid || (lid && (c.lid === lid || c.id === lid))
+    );
+    if (!preferPn && recoveredContact?.id?.includes("@s.whatsapp.net")) {
+      preferPn = recoveredContact.id;
+    }
+  }
 
   if (resolvedJid.endsWith("@lid") && preferPn) {
     resolvedJid = preferPn;
@@ -632,9 +642,10 @@ const convertToContactPayload = async (
 
   const normalizedJid = safeNormalized(resolvedJid);
 
-  const contactInfo =
+  let contactInfo =
     wbot.store?.contacts?.[resolvedJid] ||
-    wbot.store?.contacts?.[normalizedJid];
+    wbot.store?.contacts?.[normalizedJid] ||
+    recoveredContact;
 
   const chatInfo =
     wbot.store?.chats?.get?.(resolvedJid) ||
