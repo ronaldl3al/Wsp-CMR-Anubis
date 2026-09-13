@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useReducer, useContext } from "react";
+import React, { useState, useEffect, useReducer, useContext, useRef } from "react";
 import openSocket from "../../services/socket-io";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
@@ -208,6 +208,49 @@ const Contacts = () => {
     }
   };
 
+  const fileUploadRef = useRef(null);
+
+  const handleExportGoogleCsv = async (type = "unregistered") => {
+    try {
+      const { data } = await api.get(`/contacts/export-google?type=${type}`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `google_contactos_${type}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success("Archivo CSV generado exitosamente");
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  const handleImportGoogleCsv = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      setLoading(true);
+      const { data } = await api.post("/contacts/import-google", formData);
+      toast.success(
+        `Contactos importados: ${data.total} (${data.createdCount} nuevos, ${data.updatedCount} actualizados)`
+      );
+      dispatch({ type: "RESET" });
+      setPageNumber(1);
+      setLoading(false);
+    } catch (err) {
+      toastError(err);
+      setLoading(false);
+    }
+    if (fileUploadRef.current) {
+      fileUploadRef.current.value = "";
+    }
+  };
+
   const loadMore = () => {
     setPageNumber((prevState) => prevState + 1);
   };
@@ -264,6 +307,34 @@ const Contacts = () => {
               ),
             }}
           />
+          <input
+            type="file"
+            ref={fileUploadRef}
+            style={{ display: "none" }}
+            accept=".csv"
+            onChange={handleImportGoogleCsv}
+          />
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => fileUploadRef.current?.click()}
+          >
+            Importar Google CSV
+          </Button>
+          <Button
+            variant="contained"
+            style={{ backgroundColor: "#25D366", color: "#fff" }}
+            onClick={() => handleExportGoogleCsv("unregistered")}
+          >
+            Exportar No Registrados
+          </Button>
+          <Button
+            variant="contained"
+            color="default"
+            onClick={() => handleExportGoogleCsv("all")}
+          >
+            Exportar Todos
+          </Button>
           <Button
             variant="contained"
             color="primary"

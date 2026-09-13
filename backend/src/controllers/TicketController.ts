@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
+import { Op } from "sequelize";
 import { getIO } from "../libs/socket";
+import Ticket from "../models/Ticket";
 
 import CreateTicketService from "../services/TicketServices/CreateTicketService";
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
@@ -125,4 +127,28 @@ export const remove = async (
   });
 
   return res.status(200).json({ message: "ticket deleted" });
+};
+
+export const closeAll = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { status } = req.body || {};
+  const where: any = {};
+  if (status) {
+    where.status = status;
+  } else {
+    where.status = { [Op.or]: ["open", "pending"] };
+  }
+
+  const tickets = await Ticket.findAll({ where });
+
+  for (const ticket of tickets) {
+    await ticket.update({ status: "closed" });
+  }
+
+  const io = getIO();
+  io.emit("ticket", { action: "refresh" });
+
+  return res.status(200).json({ count: tickets.length });
 };

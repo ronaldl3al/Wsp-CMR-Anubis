@@ -18,6 +18,10 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { Can } from "../Can";
 import TicketsQueueSelect from "../TicketsQueueSelect";
 import { Button } from "@material-ui/core";
+import ConfirmationModal from "../ConfirmationModal";
+import api from "../../services/api";
+import toastError from "../../errors/toastError";
+import { toast } from "react-toastify";
 
 const useStyles = makeStyles((theme) => ({
   ticketsWrapper: {
@@ -96,6 +100,18 @@ const TicketsManager = () => {
   const [pendingCount, setPendingCount] = useState(0);
   const userQueueIds = user.queues.map((q) => q.id);
   const [selectedQueueIds, setSelectedQueueIds] = useState(userQueueIds || []);
+  const [confirmCloseAllOpen, setConfirmCloseAllOpen] = useState(false);
+
+  const handleCloseAllTickets = async () => {
+    try {
+      const { data } = await api.post("/tickets/closeAll");
+      toast.success(`Se resolvieron ${data.count} tickets exitosamente`);
+      setOpenCount(0);
+      setPendingCount(0);
+    } catch (err) {
+      toastError(err);
+    }
+  };
 
   useEffect(() => {
     if (user.profile.toUpperCase() === "ADMIN") {
@@ -149,6 +165,14 @@ const TicketsManager = () => {
         modalOpen={newTicketModalOpen}
         onClose={(e) => setNewTicketModalOpen(false)}
       />
+      <ConfirmationModal
+        title="¿Resolver todos los tickets?"
+        open={confirmCloseAllOpen}
+        onClose={setConfirmCloseAllOpen}
+        onConfirm={handleCloseAllTickets}
+      >
+        ¿Estás seguro de que deseas cerrar todos los tickets pendientes y en atención? Esta acción moverá todos los tickets de la cola y en atención a "Resueltos".
+      </ConfirmationModal>
       <Paper elevation={0} square className={classes.tabsHeader}>
         <Tabs
           value={tab}
@@ -198,6 +222,13 @@ const TicketsManager = () => {
               onClick={() => setNewTicketModalOpen(true)}
             >
               {i18n.t("ticketsManager.buttons.newTicket")}
+            </Button>
+            <Button
+              variant="outlined"
+              style={{ color: "#d32f2f", borderColor: "#d32f2f", marginLeft: 6 }}
+              onClick={() => setConfirmCloseAllOpen(true)}
+            >
+              Resolver Todos
             </Button>
             <Can
               role={user.profile}

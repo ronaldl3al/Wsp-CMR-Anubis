@@ -13,6 +13,10 @@ import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import AppError from "../errors/AppError";
 import GetContactService from "../services/ContactServices/GetContactService";
+import {
+  ExportGoogleContactsService,
+  ImportGoogleContactsService
+} from "../services/ContactServices/GoogleContactsService";
 
 type IndexQuery = {
   searchParam: string;
@@ -162,4 +166,45 @@ export const remove = async (
   });
 
   return res.status(200).json({ message: "Contact deleted" });
+};
+
+export const exportGoogleContacts = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const { type } = req.query as { type?: "all" | "unregistered" };
+  const csvContent = await ExportGoogleContactsService(type || "all");
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="contactos_google_${type || "all"}.csv"`
+  );
+  return res.status(200).send(csvContent);
+};
+
+export const importGoogleContacts = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  let csvData = "";
+  if (req.file && req.file.path) {
+    const fs = require("fs");
+    csvData = fs.readFileSync(req.file.path, "utf-8");
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {}
+  } else if (req.body && req.body.csvContent) {
+    csvData = req.body.csvContent;
+  } else if (typeof req.body === "string") {
+    csvData = req.body;
+  }
+
+  if (!csvData) {
+    throw new AppError("ERR_NO_CSV_DATA_PROVIDED", 400);
+  }
+
+  const result = await ImportGoogleContactsService(csvData);
+
+  return res.status(200).json(result);
 };

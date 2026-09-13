@@ -1,10 +1,27 @@
 import express from "express";
 import isAuth from "../middleware/isAuth";
 
+import uploadConfig from "../config/upload";
+import multer from "multer";
+
 import * as ContactController from "../controllers/ContactController";
 import * as ImportPhoneContactsController from "../controllers/ImportPhoneContactsController";
 
+const upload = multer(uploadConfig);
 const contactRoutes = express.Router();
+
+contactRoutes.get(
+  "/contacts/export-google",
+  isAuth,
+  ContactController.exportGoogleContacts
+);
+
+contactRoutes.post(
+  "/contacts/import-google",
+  isAuth,
+  upload.single("file"),
+  ContactController.importGoogleContacts
+);
 
 contactRoutes.post(
   "/contacts/import",
