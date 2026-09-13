@@ -298,6 +298,7 @@ const MessageInput = ({ ticketStatus }) => {
 
     setLoading(false);
     setMedias([]);
+    setReplyingMessage(null);
   };
 
   const handleSendMessage = async () => {
@@ -426,7 +427,21 @@ const MessageInput = ({ ticketStatus }) => {
                 {message.contact?.name}
               </span>
             )}
-            {message.body}
+            {message.mediaType === "image" ||
+            (message.mediaUrl &&
+              /\.(jpe?g|png|gif|webp)$/i.test(message.mediaUrl)) ? (
+              <span>📷 Foto {message.body || ""}</span>
+            ) : message.mediaType === "video" ||
+              (message.mediaUrl &&
+                /\.(mp4|mov|avi)$/i.test(message.mediaUrl)) ? (
+              <span>🎥 Video {message.body || ""}</span>
+            ) : message.mediaType === "audio" ||
+              (message.mediaUrl &&
+                /\.(mp3|ogg|wav)$/i.test(message.mediaUrl)) ? (
+              <span>🎵 Audio</span>
+            ) : (
+              message.body
+            )}
           </div>
         </div>
         <IconButton

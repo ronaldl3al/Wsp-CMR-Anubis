@@ -2,6 +2,7 @@ import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import { whatsappProvider } from "../../providers/WhatsApp";
 import Contact from "../../models/Contact";
 import { logger } from "../../utils/logger";
+import { getIO } from "../../libs/socket";
 
 const ImportContactsService = async (userId: number): Promise<void> => {
   const defaultWhatsapp = await GetDefaultWhatsApp(userId);
@@ -15,6 +16,7 @@ const ImportContactsService = async (userId: number): Promise<void> => {
   }
 
   if (phoneContacts) {
+    const io = getIO();
     await Promise.all(
       phoneContacts.map(async ({ number, name }) => {
         if (!number) {
@@ -28,9 +30,17 @@ const ImportContactsService = async (userId: number): Promise<void> => {
           where: { number }
         });
 
-        if (numberExists) return null;
+        if (numberExists) {
+          if (name && name !== number && numberExists.name !== name) {
+            await numberExists.update({ name });
+            io.emit("contact", { action: "update", contact: numberExists });
+          }
+          return null;
+        }
 
-        return Contact.create({ number, name });
+        const created = await Contact.create({ number, name });
+        io.emit("contact", { action: "create", contact: created });
+        return created;
       })
     );
   }

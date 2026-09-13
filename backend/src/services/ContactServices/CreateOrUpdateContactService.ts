@@ -69,10 +69,20 @@ const CreateOrUpdateContactService = async ({
   }
 
   if (contactByNumber) {
-    await contactByNumber.update({
+    const updateData: any = {
       lid: lid || contactByNumber.lid,
-      profilePicUrl
-    });
+      profilePicUrl: profilePicUrl || contactByNumber.profilePicUrl
+    };
+    if (
+      name &&
+      name !== number &&
+      (contactByNumber.name === contactByNumber.number ||
+        contactByNumber.name === contactByNumber.lid ||
+        !contactByNumber.name)
+    ) {
+      updateData.name = name;
+    }
+    await contactByNumber.update(updateData);
 
     emitContact("update", contactByNumber);
 
@@ -80,10 +90,20 @@ const CreateOrUpdateContactService = async ({
   }
 
   if (contactByLid) {
-    await contactByLid.update({
+    const updateData: any = {
       number: number || contactByLid.number,
-      profilePicUrl
-    });
+      profilePicUrl: profilePicUrl || contactByLid.profilePicUrl
+    };
+    if (
+      name &&
+      name !== number &&
+      (contactByLid.name === contactByLid.number ||
+        contactByLid.name === contactByLid.lid ||
+        !contactByLid.name)
+    ) {
+      updateData.name = name;
+    }
+    await contactByLid.update(updateData);
 
     emitContact("update", contactByLid);
     return contactByLid;

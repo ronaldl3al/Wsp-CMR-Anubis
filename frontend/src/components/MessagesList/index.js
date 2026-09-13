@@ -584,7 +584,21 @@ const MessagesList = ({ ticketId, isGroup }) => {
               {message.quotedMsg?.contact?.name}
             </span>
           )}
-          {message.quotedMsg?.body}
+          {message.quotedMsg?.mediaType === "image" ||
+          (message.quotedMsg?.mediaUrl &&
+            /\.(jpe?g|png|gif|webp)$/i.test(message.quotedMsg.mediaUrl)) ? (
+            <span>📷 Foto {message.quotedMsg.body || ""}</span>
+          ) : message.quotedMsg?.mediaType === "video" ||
+            (message.quotedMsg?.mediaUrl &&
+              /\.(mp4|mov|avi)$/i.test(message.quotedMsg.mediaUrl)) ? (
+            <span>🎥 Video {message.quotedMsg.body || ""}</span>
+          ) : message.quotedMsg?.mediaType === "audio" ||
+            (message.quotedMsg?.mediaUrl &&
+              /\.(mp3|ogg|wav)$/i.test(message.quotedMsg.mediaUrl)) ? (
+            <span>🎵 Audio</span>
+          ) : (
+            message.quotedMsg?.body
+          )}
         </div>
       </div>
     );

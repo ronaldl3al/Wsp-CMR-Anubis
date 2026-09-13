@@ -35,6 +35,7 @@ import NodeCache from "node-cache";
 
 import Whatsapp from "../../../models/Whatsapp";
 import Contact from "../../../models/Contact";
+import Message from "../../../models/Message";
 import { getIO } from "../../../libs/socket";
 import { logger } from "../../../utils/logger";
 import AppError from "../../../errors/AppError";
@@ -720,8 +721,25 @@ const convertToContactPayload = async (
   const lidValue =
     isLidUser(resolvedJid) && decoded?.user ? `${decoded.user}@lid` : lid;
 
+  let dbContactName = "";
+  try {
+    const whereClause: any = {};
+    if (number) whereClause.number = number;
+    else if (lidValue) whereClause.lid = lidValue;
+
+    if (Object.keys(whereClause).length > 0) {
+      const existingDb = await Contact.findOne({
+        where: whereClause
+      });
+      if (existingDb && existingDb.name && existingDb.name !== existingDb.number && existingDb.name !== existingDb.lid) {
+        dbContactName = existingDb.name;
+      }
+    }
+  } catch {}
+
   const name =
     contactInfo?.name ||
+    dbContactName ||
     contactInfo?.notify ||
     pushName ||
     number ||
@@ -980,7 +998,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         })
       )
     },
-    shouldSyncHistoryMessage: () => false,
+    shouldSyncHistoryMessage: () => true,
     shouldIgnoreJid: jid => {
       if (typeof jid !== "string") return false;
       return (
@@ -1097,6 +1115,10 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   };
 
   wbot.ev.on("contacts.upsert", async contacts => {
+    await syncContacts(contacts);
+  });
+
+  wbot.ev.on("contacts.update", async contacts => {
     await syncContacts(contacts);
   });
 
@@ -1357,6 +1379,89 @@ const logout = async (sessionId: number): Promise<void> => {
   await clearSessionKeys(sessionId);
 };
 
+const buildQuotedContext = async (
+  wbot: Session,
+  toJid: string,
+  options?: { quotedMessageId?: string; quotedMessageFromMe?: boolean }
+): Promise<{
+  contextInfo?: any;
+  quoted?: WAMessage;
+}> => {
+  if (!options?.quotedMessageId) return {};
+
+  const { quotedMessageId, quotedMessageFromMe } = options;
+
+  let quotedMessageProto: any = undefined;
+  const cached = msgCache.get({ id: quotedMessageId });
+  if (cached) {
+    quotedMessageProto = cached;
+  } else {
+    try {
+      const dbMsg = await Message.findByPk(quotedMessageId);
+      if (dbMsg) {
+        if (
+          dbMsg.mediaType === "image" ||
+          (dbMsg.mediaUrl && /\.(jpe?g|png|gif|webp)$/i.test(dbMsg.mediaUrl))
+        ) {
+          quotedMessageProto = {
+            imageMessage: {
+              caption: dbMsg.body || ""
+            }
+          };
+        } else if (
+          dbMsg.mediaType === "video" ||
+          (dbMsg.mediaUrl && /\.(mp4|mov|avi)$/i.test(dbMsg.mediaUrl))
+        ) {
+          quotedMessageProto = {
+            videoMessage: {
+              caption: dbMsg.body || ""
+            }
+          };
+        } else if (
+          dbMsg.mediaType === "audio" ||
+          (dbMsg.mediaUrl && /\.(mp3|ogg|wav)$/i.test(dbMsg.mediaUrl))
+        ) {
+          quotedMessageProto = {
+            audioMessage: {}
+          };
+        } else {
+          quotedMessageProto = {
+            conversation: dbMsg.body || ""
+          };
+        }
+      }
+    } catch (err) {
+      logger.error({ info: "Error loading quoted message from db", err });
+    }
+  }
+
+  if (!quotedMessageProto) {
+    quotedMessageProto = { conversation: "" };
+  }
+
+  const participant = quotedMessageFromMe
+    ? (wbot.user?.id ? jidNormalizedUser(wbot.user.id) : toJid)
+    : toJid;
+
+  const contextInfo = {
+    stanzaId: quotedMessageId,
+    participant,
+    quotedMessage: quotedMessageProto
+  };
+
+  const quoted = {
+    key: {
+      remoteJid: toJid,
+      fromMe: Boolean(quotedMessageFromMe),
+      id: quotedMessageId,
+      participant
+    },
+    message: quotedMessageProto
+  } as WAMessage;
+
+  return { contextInfo, quoted };
+};
+
 const sendMessage = async (
   sessionId: number,
   to: string,
@@ -1366,23 +1471,15 @@ const sendMessage = async (
   const wbot = getWbot(sessionId);
   const toJid = normalizeJid(to);
 
-  const messageContent: AnyMessageContent = options?.quotedMessageId
-    ? {
-        text: body,
-        contextInfo: {
-          stanzaId: options.quotedMessageId,
-          participant: options.quotedMessageFromMe
-            ? wbot.user?.id
-              ? jidNormalizedUser(wbot.user.id)
-              : undefined
-            : toJid
-        }
-      }
+  const { contextInfo, quoted } = await buildQuotedContext(wbot, toJid, options);
+
+  const messageContent: AnyMessageContent = contextInfo
+    ? { text: body, contextInfo }
     : { text: body };
 
   let sentMsg;
   try {
-    sentMsg = await wbot.sendMessage(toJid, messageContent);
+    sentMsg = await wbot.sendMessage(toJid, messageContent, quoted ? { quoted } : undefined);
   } catch (err) {
     logger.error({ info: "DEBUG_BAILEYS_SEND_ERROR", err, toJid, messageContent });
     throw new AppError("ERR_SENDING_WAPP_MSG");
@@ -1432,16 +1529,7 @@ const sendMedia = async (
   const mediaBuffer = media.path ? readFileSync(media.path) : media.data;
   if (!mediaBuffer) throw new AppError("ERR_NO_MEDIA_DATA");
 
-  const contextInfo = options?.quotedMessageId
-    ? {
-        stanzaId: options.quotedMessageId,
-        participant: options.quotedMessageFromMe
-          ? wbot.user?.id
-            ? jidNormalizedUser(wbot.user.id)
-            : undefined
-          : toJid
-      }
-    : undefined;
+  const { contextInfo, quoted } = await buildQuotedContext(wbot, toJid, options);
 
   const buildPayload = () => {
     const base = {
@@ -1491,7 +1579,7 @@ const sendMedia = async (
 
   const { message, type } = buildPayload();
 
-  const sent = await wbot.sendMessage(toJid, message);
+  const sent = await wbot.sendMessage(toJid, message, quoted ? { quoted } : undefined);
   if (!sent?.key?.id) throw new AppError("ERR_SENDING_WAPP_MEDIA_MSG");
 
   logger.debug({
