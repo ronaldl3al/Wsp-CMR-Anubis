@@ -339,10 +339,32 @@ const useSessionAuthState = async (whatsapp: Whatsapp) => {
   };
 };
 
-const mapMessageType = (msg: WAMessage): MessageType => {
-  const messageType = getContentType(msg.message || undefined);
+const getRealMessage = (msg: WAMessage) => {
+  let content = msg.message;
+  if (!content) return undefined;
+  if (content.ephemeralMessage) {
+    content = content.ephemeralMessage.message;
+  }
+  if (content?.viewOnceMessage) {
+    content = content.viewOnceMessage.message;
+  }
+  if (content?.viewOnceMessageV2) {
+    content = content.viewOnceMessageV2.message;
+  }
+  if (content?.viewOnceMessageV2Extension) {
+    content = content.viewOnceMessageV2Extension.message;
+  }
+  if (content?.documentWithCaptionMessage) {
+    content = content.documentWithCaptionMessage.message;
+  }
+  return content;
+};
 
-  if (messageType === "audioMessage" && msg.message?.audioMessage?.ptt) {
+const mapMessageType = (msg: WAMessage): MessageType => {
+  const content = getRealMessage(msg);
+  const messageType = getContentType(content || undefined);
+
+  if (messageType === "audioMessage" && content?.audioMessage?.ptt) {
     return "ptt";
   }
 
@@ -364,39 +386,40 @@ const mapMessageType = (msg: WAMessage): MessageType => {
 
 const getMessageBody = (msg: WAMessage): string => {
   try {
-    const messageType = getContentType(msg.message || undefined);
+    const content = getRealMessage(msg);
+    const messageType = getContentType(content || undefined);
 
     if (messageType === "conversation") {
-      return msg.message?.conversation || "";
+      return content?.conversation || "";
     }
 
     if (messageType === "extendedTextMessage") {
-      return msg.message?.extendedTextMessage?.text || "";
+      return content?.extendedTextMessage?.text || "";
     }
 
     if (messageType === "imageMessage") {
-      return msg.message?.imageMessage?.caption || "";
+      return content?.imageMessage?.caption || "";
     }
 
     if (messageType === "videoMessage") {
-      return msg.message?.videoMessage?.caption || "";
+      return content?.videoMessage?.caption || "";
     }
 
     if (messageType === "documentMessage") {
-      return msg.message?.documentMessage?.caption || "";
+      return content?.documentMessage?.caption || "";
     }
 
     if (messageType === "contactMessage") {
-      return msg.message?.contactMessage?.vcard || "";
+      return content?.contactMessage?.vcard || "";
     }
 
     if (messageType === "contactsArrayMessage") {
-      const contacts = msg.message?.contactsArrayMessage?.contacts || [];
+      const contacts = content?.contactsArrayMessage?.contacts || [];
       return contacts.map(c => c.vcard).join("\n");
     }
 
     if (messageType === "locationMessage") {
-      const location = msg.message?.locationMessage;
+      const location = content?.locationMessage;
       if (!location) return "";
 
       const gmapsUrl = `https://maps.google.com/maps?q=${location.degreesLatitude}%2C${location.degreesLongitude}&z=17&hl=pt-BR`;
@@ -415,18 +438,20 @@ const getMessageBody = (msg: WAMessage): string => {
 };
 
 const getQuotedMessageId = (msg: WAMessage): string | undefined => {
+  const content = getRealMessage(msg);
   const quotedMessageId =
-    msg.message?.extendedTextMessage?.contextInfo?.stanzaId ||
-    msg.message?.imageMessage?.contextInfo?.stanzaId ||
-    msg.message?.videoMessage?.contextInfo?.stanzaId ||
-    msg.message?.documentMessage?.contextInfo?.stanzaId ||
+    content?.extendedTextMessage?.contextInfo?.stanzaId ||
+    content?.imageMessage?.contextInfo?.stanzaId ||
+    content?.videoMessage?.contextInfo?.stanzaId ||
+    content?.documentMessage?.contextInfo?.stanzaId ||
     undefined;
 
   return quotedMessageId;
 };
 
 const hasMedia = (msg: WAMessage): boolean => {
-  const messageType = getContentType(msg.message || undefined);
+  const content = getRealMessage(msg);
+  const messageType = getContentType(content || undefined);
   return [
     "imageMessage",
     "videoMessage",
@@ -446,7 +471,8 @@ const mapMessageAck = (status: number | null | undefined): MessageAck => {
 };
 
 const shouldHandleMessage = (msg: WAMessage): boolean => {
-  const messageType = getContentType(msg.message || undefined);
+  const content = getRealMessage(msg);
+  const messageType = getContentType(content || undefined);
   const validTypes = [
     "conversation",
     "extendedTextMessage",
@@ -463,7 +489,7 @@ const shouldHandleMessage = (msg: WAMessage): boolean => {
   if (!validTypes.includes(messageType || "")) return false;
 
   const body = getMessageBody(msg);
-  if (/\u200e/.test(body[0])) return false;
+  if (body && /\u200e/.test(body[0])) return false;
 
   if (!msg.key.fromMe) return true;
 
@@ -535,7 +561,7 @@ const convertToContactPayload = async (
   wbot: Session
 ): Promise<ContactPayload> => {
   const keyExt = (msg.key || {}) as ExtendedKey;
-  const content = msg.message || {};
+  const content = getRealMessage(msg) || {};
   const ctx = (content?.extendedTextMessage?.contextInfo ||
     content?.imageMessage?.contextInfo ||
     content?.videoMessage?.contextInfo ||
@@ -717,12 +743,13 @@ const convertToMediaPayload = async (
       }
     );
 
-    const messageType = getContentType(msg.message || undefined);
+    const content = getRealMessage(msg);
+    const messageType = getContentType(content || undefined);
     const getExtension = (mimetype: string, fallback: string): string =>
       mimetype.split("/")[1]?.split(";")[0] || fallback;
 
     if (messageType === "imageMessage") {
-      const mimetype = msg.message?.imageMessage?.mimetype || "image/jpeg";
+      const mimetype = content?.imageMessage?.mimetype || "image/jpeg";
       return {
         filename: `image-${Date.now()}.${getExtension(mimetype, "jpg")}`,
         mimetype,
@@ -731,7 +758,7 @@ const convertToMediaPayload = async (
     }
 
     if (messageType === "videoMessage") {
-      const mimetype = msg.message?.videoMessage?.mimetype || "video/mp4";
+      const mimetype = content?.videoMessage?.mimetype || "video/mp4";
       return {
         filename: `video-${Date.now()}.${getExtension(mimetype, "mp4")}`,
         mimetype,
@@ -741,7 +768,7 @@ const convertToMediaPayload = async (
 
     if (messageType === "audioMessage") {
       const mimetype =
-        msg.message?.audioMessage?.mimetype || "audio/ogg; codecs=opus";
+        content?.audioMessage?.mimetype || "audio/ogg; codecs=opus";
       return {
         filename: `audio-${Date.now()}.ogg`,
         mimetype,
@@ -750,7 +777,7 @@ const convertToMediaPayload = async (
     }
 
     if (messageType === "documentMessage") {
-      const docMsg = msg.message?.documentMessage;
+      const docMsg = content?.documentMessage;
       const mimetype = docMsg?.mimetype || "application/octet-stream";
       const ext = getExtension(mimetype, "bin");
       return {
@@ -761,7 +788,7 @@ const convertToMediaPayload = async (
     }
 
     if (messageType === "stickerMessage") {
-      const mimetype = msg.message?.stickerMessage?.mimetype || "image/webp";
+      const mimetype = content?.stickerMessage?.mimetype || "image/webp";
       return {
         filename: `sticker-${Date.now()}.webp`,
         mimetype,
@@ -1258,9 +1285,16 @@ const sendMessage = async (
       }
     : { text: body };
 
-  const sentMsg = await wbot.sendMessage(toJid, messageContent);
+  let sentMsg;
+  try {
+    sentMsg = await wbot.sendMessage(toJid, messageContent);
+  } catch (err) {
+    logger.error({ info: "DEBUG_BAILEYS_SEND_ERROR", err, toJid, messageContent });
+    throw new AppError("ERR_SENDING_WAPP_MSG");
+  }
 
   if (!sentMsg?.key.id) {
+    logger.error({ info: "DEBUG_BAILEYS_SEND_NO_ID", sentMsg, toJid });
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 
