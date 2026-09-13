@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "postinstall": "node scripts/patch-whaileys.js",
+    "build": "node scripts/patch-whaileys.js && tsc",
     "watch": "tsc -w",
     "start": "nodemon dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only --ignore node_modules src/server.ts",

@@ -1001,7 +1001,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
   const connOptions: UserFacingSocketConfig = {
     logger: whaileyLogger,
-    browser: Browsers.ubuntu(process.env.WHATSAPP_BROWSER_NAME || "Chrome"),
+    browser: Browsers.macOS("Desktop"),
     emitOwnEvents: true,
     auth: {
       creds: state.creds,
@@ -1146,9 +1146,11 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     if (messages && messages.length > 0) {
       try {
         let syncedToTickets = 0;
+        const ticketUpdates = new Map<number, { lastMessage: string; timestamp: Date }>();
+
         for (const msg of messages) {
           if (!msg.message || !shouldHandleMessage(msg)) continue;
-          const remoteJid = msg.key.remoteJid || "";
+          const remoteJid = msg.key?.remoteJid || (msg as any).chatId || "";
           if (
             !remoteJid ||
             isJidBroadcast(remoteJid) ||
@@ -1208,16 +1210,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
             });
           }
 
-          if (ticket && msg.key.id) {
+          if (ticket && msg.key?.id) {
+            const rawTs = Number(msg.messageTimestamp);
+            const timestampMs =
+              rawTs > 1000000000000 ? rawTs : rawTs * 1000;
+            const createdAt = new Date(timestampMs || Date.now());
+            const body = getMessageBody(msg) || "";
+            const mediaType = mapMessageType(msg) || "chat";
+
             const exists = await Message.findByPk(msg.key.id);
             if (!exists) {
-              const rawTs = Number(msg.messageTimestamp);
-              const timestampMs =
-                rawTs > 1000000000000 ? rawTs : rawTs * 1000;
-              const createdAt = new Date(timestampMs || Date.now());
-              const body = getMessageBody(msg) || "";
-              const mediaType = mapMessageType(msg) || "chat";
-
               const created = await Message.create({
                 id: msg.key.id,
                 ticketId: ticket.id,
@@ -1239,8 +1241,35 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
                 message: created
               });
             }
+
+            const currentUpdate = ticketUpdates.get(ticket.id);
+            if (!currentUpdate || createdAt > currentUpdate.timestamp) {
+              ticketUpdates.set(ticket.id, {
+                lastMessage: body,
+                timestamp: createdAt
+              });
+            }
           }
         }
+
+        for (const [ticketId, { lastMessage, timestamp }] of ticketUpdates.entries()) {
+          const t = await Ticket.findByPk(ticketId);
+          if (t) {
+            await t.update({
+              lastMessage,
+              updatedAt: timestamp
+            });
+            getIO()
+              .to(t.status)
+              .to("notification")
+              .to(t.id.toString())
+              .emit("ticket", {
+                action: "update",
+                ticket: t
+              });
+          }
+        }
+
         if (syncedToTickets > 0) {
           logger.info(
             `[SYNC] Stored and synced ${syncedToTickets} history messages from WhatsApp.`
@@ -1893,7 +1922,15 @@ const sendPeerDataOperation = async (
   const me = wbot.user;
   if (!me?.id) throw new AppError("Not authenticated");
 
-  const targetJid = jidNormalizedUser(me.lid || me.id);
+  if (typeof (wbot as any).sendPeerDataOperationMessage === "function") {
+    try {
+      return await (wbot as any).sendPeerDataOperationMessage(pdoMessage);
+    } catch (e) {
+      // fallback to manual relay
+    }
+  }
+
+  const targetJid = (me.lid && jidNormalizedUser(me.lid)) || jidNormalizedUser(me.id);
 
   const protocolMessage = {
     protocolMessage: {

@@ -27,17 +27,6 @@ const ListMessagesService = async ({
     throw new AppError("ERR_NO_TICKET_FOUND", 404);
   }
 
-  // If no messages exist in DB for this ticket and it's the first page, sync history from WhatsApp
-  if (+pageNumber === 1) {
-    const existingCount = await Message.count({ where: { ticketId } });
-    if (existingCount === 0) {
-      await SyncChatHistoryService(ticket);
-    }
-  }
-
-  const limit = 20;
-  const offset = limit * (+pageNumber - 1);
-
   let ticketIds: number[] = [+ticketId];
   if (ticket.contactId) {
     const contactTickets = await Ticket.findAll({
@@ -52,6 +41,19 @@ const ListMessagesService = async ({
       ticketIds.push(+ticketId);
     }
   }
+
+  // If no messages exist in DB for this contact and it's the first page, sync history from WhatsApp
+  if (+pageNumber === 1) {
+    const existingCount = await Message.count({
+      where: { ticketId: { [Op.in]: ticketIds } }
+    });
+    if (existingCount === 0) {
+      await SyncChatHistoryService(ticket);
+    }
+  }
+
+  const limit = 20;
+  const offset = limit * (+pageNumber - 1);
 
   const { count, rows: messages } = await Message.findAndCountAll({
     where: { ticketId: { [Op.in]: ticketIds } },
