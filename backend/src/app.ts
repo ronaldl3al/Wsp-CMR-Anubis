@@ -32,11 +32,25 @@ import path from "path";
 const frontendPath = path.join(__dirname, "..", "public", "frontend");
 app.use(express.static(frontendPath));
 
+// Intercept browser page requests (e.g. refreshing /contacts or /tickets)
+app.get("*", (req: Request, res: Response, next: NextFunction) => {
+  if (
+    req.accepts("html") &&
+    !req.xhr &&
+    !req.headers["authorization"] &&
+    !req.path.startsWith("/public") &&
+    !req.path.startsWith("/api")
+  ) {
+    return res.sendFile(path.join(frontendPath, "index.html"));
+  }
+  return next();
+});
+
 app.use(routes);
 
-// --- SPA Fallback ---
+// --- SPA Fallback for any other unmatched routes ---
 app.get("*", (req: Request, res: Response, next: NextFunction) => {
-  if (req.path.startsWith("/api") || req.path.startsWith("/public")) {
+  if (req.path.startsWith("/public") || req.path.startsWith("/api")) {
     return next();
   }
   res.sendFile(path.join(frontendPath, "index.html"));

@@ -196,10 +196,15 @@ const Contacts = () => {
 
   const handleimportContact = async () => {
     try {
+      setLoading(true);
       await api.post("/contacts/import");
-      history.go(0);
+      dispatch({ type: "RESET" });
+      setPageNumber(1);
+      toast.success(i18n.t("contacts.toasts.importSuccess") || "Contactos importados con éxito");
+      setLoading(false);
     } catch (err) {
       toastError(err);
+      setLoading(false);
     }
   };
 

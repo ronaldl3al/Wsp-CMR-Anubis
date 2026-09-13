@@ -1007,7 +1007,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         jid === "status@broadcast"
       );
     },
-    syncFullHistory: false,
+    syncFullHistory: true,
     version: waVersionToUse,
     msgRetryCounterMap,
     markOnlineOnConnect: false,
@@ -1122,9 +1122,38 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     await syncContacts(contacts);
   });
 
-  wbot.ev.on("messaging-history.set", async ({ contacts }) => {
+  wbot.ev.on("messaging-history.set", async ({ contacts, messages }) => {
     if (contacts && contacts.length > 0) {
       await syncContacts(contacts);
+    }
+    if (messages && messages.length > 0) {
+      try {
+        const recentMessages = messages.slice(-150);
+        for (const msg of recentMessages) {
+          if (!msg.message || !shouldHandleMessage(msg)) continue;
+          try {
+            const {
+              messagePayload,
+              contactPayload,
+              contextPayload,
+              mediaPayload
+            } = await getMessageData(msg, wbot);
+            await handleMessage(
+              messagePayload,
+              contactPayload,
+              contextPayload,
+              mediaPayload
+            );
+          } catch {
+            // ignore individual message failures
+          }
+        }
+        logger.info(
+          `[SYNC] Processed ${recentMessages.length} history messages from WhatsApp.`
+        );
+      } catch (err) {
+        logger.error({ err }, "Error processing history messages");
+      }
     }
   });
 

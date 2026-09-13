@@ -566,12 +566,28 @@ const MessagesList = ({ ticketId, isGroup }) => {
     }
   };
 
+  const handleScrollToMessage = (targetId) => {
+    if (!targetId) return;
+    const element = document.getElementById(`message-${targetId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      const originalOutline = element.style.outline;
+      element.style.outline = "2px solid #25D366";
+      element.style.borderRadius = "8px";
+      setTimeout(() => {
+        element.style.outline = originalOutline;
+      }, 1500);
+    }
+  };
+
   const renderQuotedMessage = (message) => {
     return (
       <div
         className={clsx(classes.quotedContainerLeft, {
           [classes.quotedContainerRight]: message.fromMe,
         })}
+        style={{ cursor: "pointer" }}
+        onClick={() => handleScrollToMessage(message.quotedMsg?.id)}
       >
         <span
           className={clsx(classes.quotedSideColorLeft, {
@@ -612,7 +628,7 @@ const MessagesList = ({ ticketId, isGroup }) => {
             <React.Fragment key={message.id}>
               {renderDailyTimestamps(message, index)}
               {renderMessageDivider(message, index)}
-              <div className={classes.messageLeft}>
+              <div className={classes.messageLeft} id={`message-${message.id}`}>
                 <IconButton
                   variant="contained"
                   size="small"
@@ -646,7 +662,7 @@ const MessagesList = ({ ticketId, isGroup }) => {
             <React.Fragment key={message.id}>
               {renderDailyTimestamps(message, index)}
               {renderMessageDivider(message, index)}
-              <div className={classes.messageRight}>
+              <div className={classes.messageRight} id={`message-${message.id}`}>
                 <IconButton
                   variant="contained"
                   size="small"
