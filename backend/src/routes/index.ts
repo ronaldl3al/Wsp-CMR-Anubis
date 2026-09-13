@@ -26,4 +26,12 @@ routes.use(queueRoutes);
 routes.use(quickAnswerRoutes);
 routes.use("/api/messages", apiRoutes);
 
+routes.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    provider: process.env.WHATSAPP_PROVIDER || "whaileys",
+    time: new Date().toISOString()
+  });
+});
+
 export default routes;
