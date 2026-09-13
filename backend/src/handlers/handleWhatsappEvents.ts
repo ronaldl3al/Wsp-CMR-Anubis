@@ -289,6 +289,15 @@ export const handleMessage = async (
 
     await ticket.update({ lastMessage: lastMessageText });
 
+    getIO()
+      .to(ticket.status)
+      .to("notification")
+      .to(ticket.id.toString())
+      .emit("ticket", {
+        action: "update",
+        ticket
+      });
+
     await CreateMessageService({ messageData });
 
     await processVcardMessage(processedMessage);
