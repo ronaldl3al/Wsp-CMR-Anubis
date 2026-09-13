@@ -36,6 +36,9 @@ const CreateOrUpdateContactService = async ({
   const number = isGroup ? rawNumber : rawNumber.replace(/[^0-9]/g, "");
   if (!number && !lid) throw new Error("Either number or lid must be provided");
 
+  const isNameGarbage = !name || /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(name.trim());
+  const validName = isNameGarbage ? (number || lid || "") : name.trim();
+
   const [contactByNumber, contactByLid] = await Promise.all([
     number ? Contact.findOne({ where: { number } }) : null,
     lid ? Contact.findOne({ where: { lid } }) : null
@@ -52,10 +55,20 @@ const CreateOrUpdateContactService = async ({
 
     await contactByLid.destroy();
 
-    await contactByNumber.update({
+    const mergeUpdate: any = {
       lid: contactByLid.lid,
-      profilePicUrl
-    });
+      profilePicUrl: profilePicUrl || contactByNumber.profilePicUrl
+    };
+    if (
+      validName &&
+      validName !== number &&
+      (contactByNumber.name === contactByNumber.number ||
+        !contactByNumber.name ||
+        /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(contactByNumber.name))
+    ) {
+      mergeUpdate.name = validName;
+    }
+    await contactByNumber.update(mergeUpdate);
 
     logger.info({
       info: "Merged contacts by number and lid",
@@ -74,13 +87,13 @@ const CreateOrUpdateContactService = async ({
       profilePicUrl: profilePicUrl || contactByNumber.profilePicUrl
     };
     if (
-      name &&
-      name !== number &&
+      validName &&
       (contactByNumber.name === contactByNumber.number ||
         contactByNumber.name === contactByNumber.lid ||
-        !contactByNumber.name)
+        !contactByNumber.name ||
+        /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(contactByNumber.name))
     ) {
-      updateData.name = name;
+      updateData.name = validName;
     }
     await contactByNumber.update(updateData);
 
@@ -95,13 +108,13 @@ const CreateOrUpdateContactService = async ({
       profilePicUrl: profilePicUrl || contactByLid.profilePicUrl
     };
     if (
-      name &&
-      name !== number &&
+      validName &&
       (contactByLid.name === contactByLid.number ||
         contactByLid.name === contactByLid.lid ||
-        !contactByLid.name)
+        !contactByLid.name ||
+        /^[.\-_*~,#@!?:;'"\\/\s]+$/.test(contactByLid.name))
     ) {
-      updateData.name = name;
+      updateData.name = validName;
     }
     await contactByLid.update(updateData);
 
@@ -110,7 +123,7 @@ const CreateOrUpdateContactService = async ({
   }
 
   const created = await Contact.create({
-    name,
+    name: validName,
     number,
     lid,
     profilePicUrl,

@@ -1,6 +1,7 @@
 import * as Yup from "yup";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
+import Contact from "../models/Contact";
 
 import ListContactsService from "../services/ContactServices/ListContactsService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
@@ -207,4 +208,18 @@ export const importGoogleContacts = async (
   const result = await ImportGoogleContactsService(csvData);
 
   return res.status(200).json(result);
+};
+
+export const removeAll = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  const count = await Contact.destroy({ where: {} });
+
+  const io = getIO();
+  io.emit("contact", {
+    action: "refresh"
+  });
+
+  return res.status(200).json({ message: "All contacts deleted", count });
 };

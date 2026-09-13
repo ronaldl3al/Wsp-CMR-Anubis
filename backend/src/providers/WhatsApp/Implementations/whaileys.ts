@@ -737,11 +737,14 @@ const convertToContactPayload = async (
     }
   } catch {}
 
+  const isValid = (val?: string) =>
+    Boolean(val && !/^[.\-_*~,#@!?:;'"\\/\s]+$/.test(val.trim()));
+
   const name =
-    contactInfo?.name ||
-    dbContactName ||
-    contactInfo?.notify ||
-    pushName ||
+    (isValid(contactInfo?.name) && contactInfo?.name) ||
+    (isValid(dbContactName) && dbContactName) ||
+    (isValid(contactInfo?.notify) && contactInfo?.notify) ||
+    (isValid(pushName) && pushName) ||
     number ||
     lidValue ||
     "";

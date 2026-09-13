@@ -37,10 +37,11 @@ export const ExportGoogleContactsService = async (
       continue;
     }
 
-    const firstName = isUnregistered ? "" : contact.name;
-    const phone = contact.number ? `+${contact.number.replace(/\D/g, "")}` : "";
+    const cleanNumber = contact.number ? contact.number.replace(/\D/g, "") : "";
+    if (!cleanNumber) continue;
 
-    if (!phone) continue;
+    const phone = `+${cleanNumber}`;
+    const firstName = isUnregistered ? phone : contact.name;
 
     const row = [
       escapeCsv(firstName), // First Name

@@ -102,6 +102,7 @@ const Contacts = () => {
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [deletingContact, setDeletingContact] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmDeleteAllOpen, setConfirmDeleteAllOpen] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
@@ -251,6 +252,20 @@ const Contacts = () => {
     }
   };
 
+  const handleDeleteAllContacts = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.post("/contacts/delete-all");
+      toast.success(`Se eliminaron ${data.count || 0} contactos`);
+      dispatch({ type: "RESET" });
+      setPageNumber(1);
+      setLoading(false);
+    } catch (err) {
+      toastError(err);
+      setLoading(false);
+    }
+  };
+
   const loadMore = () => {
     setPageNumber((prevState) => prevState + 1);
   };
@@ -290,6 +305,14 @@ const Contacts = () => {
         {deletingContact
           ? `${i18n.t("contacts.confirmationModal.deleteMessage")}`
           : `${i18n.t("contacts.confirmationModal.importMessage")}`}
+      </ConfirmationModal>
+      <ConfirmationModal
+        title="¿Eliminar TODOS los contactos?"
+        open={confirmDeleteAllOpen}
+        onClose={setConfirmDeleteAllOpen}
+        onConfirm={handleDeleteAllContacts}
+      >
+        ¿Estás completamente seguro de que deseas eliminar TODOS los contactos de Whaticket? Esta acción vaciará la lista para que puedas importar tu archivo limpio desde cero.
       </ConfirmationModal>
       <MainHeader>
         <Title>{i18n.t("contacts.title")}</Title>
@@ -334,6 +357,13 @@ const Contacts = () => {
             onClick={() => handleExportGoogleCsv("all")}
           >
             Exportar Todos
+          </Button>
+          <Button
+            variant="outlined"
+            style={{ color: "#d32f2f", borderColor: "#d32f2f" }}
+            onClick={() => setConfirmDeleteAllOpen(true)}
+          >
+            Borrar Todos
           </Button>
           <Button
             variant="contained"
