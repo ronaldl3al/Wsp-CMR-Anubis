@@ -6,8 +6,8 @@
  * 
  * Variables aceptadas por entorno o interactivas:
  *   EVOLUTION_URL (default: https://evolution-api-production-c04d.up.railway.app)
- *   EVOLUTION_API_KEY (Tu API Key de Evolution API)
- *   EVOLUTION_INSTANCE (default: ANUBIS STORE)
+ *   EVOLUTION_API_KEY (default: 25C1E751E46C-4707-A439-99A8DB7F4D5A)
+ *   EVOLUTION_INSTANCE (default: ANUBIS STORE4)
  *   CHATWOOT_URL (ej: https://wsp-cmr-anubis-production.up.railway.app)
  *   CHATWOOT_TOKEN (Token de acceso de tu usuario en Chatwoot: Perfil -> Tokens de Acceso)
  *   CHATWOOT_ACCOUNT_ID (default: 1)
@@ -32,8 +32,8 @@ async function main() {
   console.log('========================================================\n');
 
   const evoUrl = (process.env.EVOLUTION_URL || await ask('URL de Evolution API [https://evolution-api-production-c04d.up.railway.app]: ') || 'https://evolution-api-production-c04d.up.railway.app').replace(/\/+$/, '');
-  const evoKey = process.env.EVOLUTION_API_KEY || await ask('API Key de Evolution API: ');
-  const instance = process.env.EVOLUTION_INSTANCE || await ask('Nombre de Instancia [ANUBIS STORE]: ') || 'ANUBIS STORE';
+  const evoKey = process.env.EVOLUTION_API_KEY || await ask('API Key de Evolution API [25C1E751E46C-4707-A439-99A8DB7F4D5A]: ') || '25C1E751E46C-4707-A439-99A8DB7F4D5A';
+  const instance = process.env.EVOLUTION_INSTANCE || await ask('Nombre de Instancia [ANUBIS STORE4]: ') || 'ANUBIS STORE4';
 
   const cwUrl = (process.env.CHATWOOT_URL || await ask('URL pública de Chatwoot (ej: https://chatwoot-xxx.up.railway.app): ')).replace(/\/+$/, '');
   const cwToken = process.env.CHATWOOT_TOKEN || await ask('Token de Acceso de Usuario Chatwoot (Perfil -> Tokens de Acceso): ');
@@ -86,14 +86,14 @@ async function main() {
     const setData = await setRes.json();
     console.log('   Resultado de vinculación:', JSON.stringify(setData, null, 2));
 
-    console.log('\n3. Comprobando configuración en Evolution API...');
+    console.log('\n3. Comprobando configuración activa en Evolution API...');
     const findRes = await fetch(`${evoUrl}/chatwoot/find/${encodedInstance}`, {
       headers: { 'apikey': evoKey }
     });
     const findData = await findRes.json();
     console.log('   Configuración activa:', JSON.stringify(findData, null, 2));
 
-    if (findData.enabled) {
+    if (findData && findData.enabled) {
       console.log('\n========================================================');
       console.log('¡VINCULACIÓN EXITOSA!');
       console.log(`Bandeja de entrada: "${instance}" creada en Chatwoot.`);
