@@ -89,7 +89,7 @@ export const initEvolution = async () => {
       });
     }
 
-    // 2. Configure Webhook with both URLs and formats
+    // 2. Configure Webhook
     const webhookUrl = `${config.backendUrl}/webhook`;
     console.log(`[EVOLUTION] Configuring Webhook to ${webhookUrl}`);
 
@@ -109,7 +109,7 @@ export const initEvolution = async () => {
       'QRCODE_UPDATED'
     ];
 
-    // Try nested format
+    // Configure with both payload styles
     await evolutionFetch(`/webhook/set/${inst}`, {
       method: 'POST',
       body: {
@@ -123,7 +123,6 @@ export const initEvolution = async () => {
       }
     });
 
-    // Try flat format
     await evolutionFetch(`/webhook/set/${inst}`, {
       method: 'POST',
       body: {
@@ -135,7 +134,7 @@ export const initEvolution = async () => {
       }
     });
 
-    // Ensure readMessages is enabled
+    // Ensure readMessages setting
     await evolutionFetch(`/settings/set/${inst}`, {
       method: 'POST',
       body: { readMessages: true }
@@ -147,7 +146,6 @@ export const initEvolution = async () => {
     if (state === 'open') {
       console.log(`[EVOLUTION] WhatsApp Instance is CONNECTED (state: open)`);
       store.setConnectionStatus('open');
-      // Sync initial chats & messages
       await syncInitialChats();
     } else {
       console.log(`[EVOLUTION] Instance state is ${state || 'connecting'}, requesting connect QR...`);
@@ -181,28 +179,72 @@ export const syncInitialChats = async () => {
 
     if (Array.isArray(chatsList) && chatsList.length > 0) {
       for (const item of chatsList) {
-        if (!item || !item.id) continue;
-        const jid = item.id;
-        if (jid.includes('@broadcast') || jid.endsWith('newsletter')) continue;
+        if (!item) continue;
+        // IMPORTANT: Use remoteJid, NOT the cuid database ID
+        const jid = item.remoteJid || (item.id && item.id.includes('@') ? item.id : null);
+        if (!jid || jid.includes('@broadcast') || jid.endsWith('newsletter')) continue;
 
         const isGroup = jid.includes('@g.us');
         const number = jid.split('@')[0];
-        const name = item.name || item.displayName || item.pushName || item.subject || number;
+        const name = item.pushName || item.name || item.displayName || item.subject || number;
+        const pic = item.profilePicUrl || item.profilePictureUrl;
+        const updatedAt = item.updatedAt ? new Date(item.updatedAt).getTime() : Date.now();
+
+        let lastMessageSnippet = undefined;
+        if (item.lastMessage) {
+          const lm = item.lastMessage;
+          const body =
+            lm.message?.conversation ||
+            lm.message?.extendedTextMessage?.text ||
+            lm.message?.imageMessage?.caption ||
+            lm.message?.videoMessage?.caption ||
+            lm.message?.documentMessage?.caption ||
+            '';
+          const msgTimestamp = lm.messageTimestamp || Math.floor(updatedAt / 1000);
+          const fromMe = Boolean(lm.key?.fromMe);
+          const msgId = lm.key?.id || lm.id || `lm_${Date.now()}`;
+          const msgType = lm.messageType?.replace('Message', '') || 'chat';
+          const status: MessageAck = fromMe
+            ? (lm.status === 'READ' ? 'read' : (lm.status === 'DELIVERED' ? 'delivered' : 'sent'))
+            : 'read';
+
+          lastMessageSnippet = {
+            id: String(msgId),
+            body: String(body || (msgType !== 'chat' ? `[${msgType}]` : '')),
+            timestamp: Number(msgTimestamp),
+            fromMe,
+            status,
+            type: String(msgType)
+          };
+
+          // Also populate into store messages so opening the chat displays it
+          store.addMessage({
+            id: msgId,
+            chatId: jid,
+            body: body || (msgType !== 'chat' ? `[${msgType}]` : ''),
+            fromMe,
+            timestamp: msgTimestamp,
+            type: msgType as any,
+            status: status as any,
+            senderName: lm.pushName || undefined
+          });
+        }
 
         store.upsertChat({
           id: jid,
           name,
           number,
           isGroup,
-          profilePicUrl: item.profilePictureUrl || item.profilePicUrl,
+          profilePicUrl: pic || undefined,
           unreadCount: item.unreadCount || 0,
-          updatedAt: item.conversationTimestamp ? item.conversationTimestamp * 1000 : Date.now()
+          updatedAt,
+          lastMessage: lastMessageSnippet
         });
       }
-      console.log(`[EVOLUTION] Synced ${store.getChats().length} chats from /chat/findChats`);
+      console.log(`[EVOLUTION] Synced ${store.getChats().length} valid JID chats from /chat/findChats`);
     }
 
-    // 2. Fetch Contacts to improve chat names and profile pictures
+    // 2. Fetch Contacts to enhance names and pictures
     let contactsRes = await evolutionFetch(`/contact/findContact/${inst}`, { method: 'POST', body: {} });
     if (!contactsRes.ok || !contactsRes.data) {
       contactsRes = await evolutionFetch(`/contact/findContact/${inst}`, { method: 'GET' });
@@ -213,9 +255,10 @@ export const syncInitialChats = async () => {
 
     if (Array.isArray(contactsList) && contactsList.length > 0) {
       for (const c of contactsList) {
-        if (!c || !c.id) continue;
-        const jid = c.id;
-        const name = c.name || c.displayName || c.pushName;
+        if (!c) continue;
+        const jid = c.remoteJid || (c.id && c.id.includes('@') ? c.id : null);
+        if (!jid) continue;
+        const name = c.name || c.pushName || c.displayName;
         const pic = c.profilePictureUrl || c.profilePicUrl;
         if (name || pic) {
           store.upsertChat({
@@ -227,7 +270,7 @@ export const syncInitialChats = async () => {
       }
     }
 
-    // 3. Fetch Recent Messages to populate chats and conversation threads
+    // 3. Fetch Recent Messages
     const messagesRes = await evolutionFetch(`/chat/findMessages/${inst}`, {
       method: 'POST',
       body: { limit: 100 }
@@ -238,7 +281,6 @@ export const syncInitialChats = async () => {
       : (messagesRes.data?.messages || messagesRes.data?.data || []);
 
     if (Array.isArray(messagesList) && messagesList.length > 0) {
-      console.log(`[EVOLUTION] Processing ${messagesList.length} recent messages...`);
       for (const m of messagesList) {
         if (!m || !m.key) continue;
         const remoteJid = m.key.remoteJid;
@@ -272,20 +314,17 @@ export const syncInitialChats = async () => {
         else if (rawStatus === 2 || rawStatus === 'DELIVERED') ack = 'delivered';
         else if (rawStatus === 1 || rawStatus === 'SENT') ack = 'sent';
 
-        const message: Message = {
+        store.addMessage({
           id: msgId,
           chatId: remoteJid,
           body: rawText || (msgType !== 'chat' ? `[${msgType}]` : ''),
           fromMe,
           timestamp,
-          type: msgType,
+          type: msgType as any,
           status: ack,
           senderName: m.pushName || undefined
-        };
-
-        store.addMessage(message);
+        });
       }
-      console.log(`[EVOLUTION] Store now has ${store.getChats().length} chats after processing messages`);
     }
   } catch (err: any) {
     console.error('[EVOLUTION] Error syncing chats & messages:', err?.message);

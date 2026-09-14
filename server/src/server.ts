@@ -136,19 +136,32 @@ app.get('/api/chats/:jid/messages', async (req, res) => {
   if (messages.length === 0) {
     try {
       const inst = encodeURIComponent(config.evolution.instanceName);
-      const evoRes = await evolutionFetch(`/chat/findMessages/${inst}`, {
+      let evoRes = await evolutionFetch(`/chat/findMessages/${inst}`, {
         method: 'POST',
         body: {
           where: {
             key: { remoteJid: jid }
           },
-          limit: 30
+          limit: 50
         }
       });
 
-      const fetchedList = Array.isArray(evoRes.data)
+      let fetchedList = Array.isArray(evoRes.data)
         ? evoRes.data
-        : evoRes.data?.messages || [];
+        : evoRes.data?.messages || evoRes.data?.data || [];
+
+      if (!Array.isArray(fetchedList) || fetchedList.length === 0) {
+        evoRes = await evolutionFetch(`/chat/findMessages/${inst}`, {
+          method: 'POST',
+          body: {
+            where: { remoteJid: jid },
+            limit: 50
+          }
+        });
+        fetchedList = Array.isArray(evoRes.data)
+          ? evoRes.data
+          : evoRes.data?.messages || evoRes.data?.data || [];
+      }
 
       if (Array.isArray(fetchedList)) {
         for (const item of fetchedList) {

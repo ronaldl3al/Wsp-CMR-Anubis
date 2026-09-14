@@ -157,13 +157,15 @@ class ChatProvider extends ChangeNotifier {
       ApiService.markAsRead(chat.id);
     }
 
-    // Load messages if not already loaded
-    if (!_messages.containsKey(chat.id)) {
+    // Load messages if not already loaded or only has single snippet
+    if (!_messages.containsKey(chat.id) || _messages[chat.id]!.length <= 1) {
       _isLoadingMessages = true;
       notifyListeners();
 
       final msgs = await ApiService.getMessages(chat.id);
-      _messages[chat.id] = msgs;
+      if (msgs.isNotEmpty) {
+        _messages[chat.id] = msgs;
+      }
       _isLoadingMessages = false;
       notifyListeners();
     }

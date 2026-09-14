@@ -31,12 +31,32 @@ class MemoryStore {
   public connectionStatus: 'open' | 'connecting' | 'close' = 'connecting';
   public qrCode: string = '';
 
+  public clearInvalidChats() {
+    for (const [id] of this.chats) {
+      if (!id.includes('@')) {
+        this.chats.delete(id);
+      }
+    }
+  }
+
   public upsertChat(partialChat: Partial<Chat> & { id: string }): Chat {
+    if (!partialChat.id.includes('@')) {
+      return partialChat as Chat;
+    }
+
     const existing = this.chats.get(partialChat.id);
+    const userNumber = partialChat.id.split('@')[0];
+
+    // Determine readable name: avoid cuid or empty names
+    let name = partialChat.name || existing?.name;
+    if (!name || name.length > 20 && !name.includes(' ') && !name.startsWith('+')) {
+      name = userNumber;
+    }
+
     const updated: Chat = {
       id: partialChat.id,
-      name: partialChat.name || existing?.name || partialChat.number || partialChat.id.split('@')[0],
-      number: partialChat.number || existing?.number || partialChat.id.split('@')[0],
+      name: name,
+      number: partialChat.number || existing?.number || userNumber,
       isGroup: partialChat.isGroup ?? existing?.isGroup ?? partialChat.id.includes('@g.us'),
       profilePicUrl: partialChat.profilePicUrl || existing?.profilePicUrl,
       lastMessage: partialChat.lastMessage || existing?.lastMessage,
@@ -120,6 +140,7 @@ class MemoryStore {
   }
 
   public getChats(): Chat[] {
+    this.clearInvalidChats();
     return Array.from(this.chats.values()).sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
