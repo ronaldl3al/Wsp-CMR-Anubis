@@ -111,6 +111,26 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> syncChats() async {
+    _isLoadingChats = true;
+    notifyListeners();
+
+    final synced = await ApiService.syncChats();
+    if (synced.isNotEmpty) {
+      _chats = synced;
+      _sortChats();
+    } else {
+      final chats = await ApiService.getChats();
+      if (chats.isNotEmpty) {
+        _chats = chats;
+        _sortChats();
+      }
+    }
+
+    _isLoadingChats = false;
+    notifyListeners();
+  }
+
   void setSearchQuery(String query) {
     _searchQuery = query;
     notifyListeners();

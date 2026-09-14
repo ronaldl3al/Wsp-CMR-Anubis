@@ -114,6 +114,11 @@ class _ChatListSidebarState extends State<ChatListSidebar> {
               },
             ),
           IconButton(
+            icon: const Icon(Icons.sync, size: 20),
+            tooltip: 'Sincronizar Chats y Mensajes',
+            onPressed: () => provider.syncChats(),
+          ),
+          IconButton(
             icon: const Icon(Icons.note_alt_outlined, size: 20),
             tooltip: 'Notas Rápidas y Respuestas',
             onPressed: widget.onToggleNotes,

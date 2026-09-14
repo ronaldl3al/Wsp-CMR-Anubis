@@ -28,6 +28,20 @@ class ApiService {
     return [];
   }
 
+  static Future<List<Chat>> syncChats() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/api/sync'));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['chats'] is List) {
+          final List list = data['chats'];
+          return list.map((item) => Chat.fromJson(item)).toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
   static Future<List<Message>> getMessages(String chatId) async {
     try {
       final encoded = Uri.encodeComponent(chatId);

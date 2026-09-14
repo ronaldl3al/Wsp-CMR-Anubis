@@ -5,10 +5,11 @@ import path from 'path';
 import fs from 'fs';
 import { config } from './config';
 import { store } from './store';
-import { initWebSocket, broadcastNewMessage, broadcastChatUpdated } from './socket';
+import { initWebSocket, broadcastNewMessage, broadcastChatUpdated, broadcast } from './socket';
 import { handleEvolutionWebhook } from './webhook';
 import {
   initEvolution,
+  syncInitialChats,
   sendTextMessage,
   sendMediaMessage,
   markMessageAsRead,
@@ -42,9 +43,18 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Evolution Webhooks
-app.post('/webhook', handleEvolutionWebhook);
-app.post('/evolution-webhook/:sessionId?', handleEvolutionWebhook);
+// Evolution Webhooks (Support all past and present webhook URLs)
+const webhookPaths = [
+  '/webhook',
+  '/evolution',
+  '/evolution-webhook',
+  '/evolution-webhook/:sessionId',
+  '/evolution/:sessionId'
+];
+
+webhookPaths.forEach((route) => {
+  app.post(route, handleEvolutionWebhook);
+});
 
 // REST APIs
 // 1. Connection status & QR Code
@@ -61,7 +71,61 @@ app.get('/api/chats', (req, res) => {
   res.json(store.getChats());
 });
 
-// 3. Messages for a chat
+// 3. Manual sync trigger
+app.get('/api/sync', async (req, res) => {
+  console.log('[API] Manual sync triggered');
+  await syncInitialChats();
+  const chats = store.getChats();
+  broadcast('chats_init', chats);
+  res.json({ success: true, count: chats.length, chats });
+});
+
+// 4. Debug endpoint to inspect Evolution API state
+app.get('/api/debug', async (req, res) => {
+  const inst = encodeURIComponent(config.evolution.instanceName);
+  const results: Record<string, any> = {
+    config: {
+      apiUrl: config.evolution.apiUrl,
+      instanceName: config.evolution.instanceName,
+      backendUrl: config.backendUrl,
+      storeChatsCount: store.getChats().length
+    }
+  };
+
+  try {
+    results.instances = await evolutionFetch('/instance/fetchInstances');
+  } catch (e: any) {
+    results.instances = { error: e?.message };
+  }
+
+  try {
+    results.connectionState = await evolutionFetch(`/instance/connectionState/${inst}`);
+  } catch (e: any) {
+    results.connectionState = { error: e?.message };
+  }
+
+  try {
+    results.webhook = await evolutionFetch(`/webhook/find/${inst}`);
+  } catch (e: any) {
+    results.webhook = { error: e?.message };
+  }
+
+  try {
+    results.findChatsPost = await evolutionFetch(`/chat/findChats/${inst}`, { method: 'POST', body: {} });
+  } catch (e: any) {
+    results.findChatsPost = { error: e?.message };
+  }
+
+  try {
+    results.findMessagesPost = await evolutionFetch(`/chat/findMessages/${inst}`, { method: 'POST', body: { limit: 10 } });
+  } catch (e: any) {
+    results.findMessagesPost = { error: e?.message };
+  }
+
+  res.json(results);
+});
+
+// 5. Messages for a chat
 app.get('/api/chats/:jid/messages', async (req, res) => {
   const { jid } = req.params;
   const limit = parseInt(req.query.limit as string) || 50;
@@ -117,7 +181,7 @@ app.get('/api/chats/:jid/messages', async (req, res) => {
   res.json(messages);
 });
 
-// 4. Send text message
+// 6. Send text message
 app.post('/api/messages/send', async (req, res) => {
   const { chatId, text, quotedMsgId } = req.body;
   if (!chatId || !text) {
@@ -137,7 +201,7 @@ app.post('/api/messages/send', async (req, res) => {
   }
 });
 
-// 5. Send media message
+// 7. Send media message
 app.post('/api/messages/send-media', async (req, res) => {
   const { chatId, mediaBase64, mimetype, fileName, caption } = req.body;
   if (!chatId || !mediaBase64 || !mimetype) {
@@ -157,7 +221,7 @@ app.post('/api/messages/send-media', async (req, res) => {
   }
 });
 
-// 6. Mark chat as read
+// 8. Mark chat as read
 app.post('/api/chats/:jid/read', async (req, res) => {
   const { jid } = req.params;
   await markMessageAsRead(jid);
@@ -168,7 +232,7 @@ app.post('/api/chats/:jid/read', async (req, res) => {
   res.json({ success: true });
 });
 
-// 7. Quick notes APIs
+// 9. Quick notes APIs
 app.get('/api/notes', (req, res) => {
   res.json(store.getNotes());
 });
@@ -202,7 +266,6 @@ if (staticPath) {
     res.sendFile(path.join(staticPath, 'index.html'));
   });
 } else {
-  // Fallback landing page if frontend build is not yet present
   app.get('/', (req, res) => {
     res.send(`
       <!DOCTYPE html>
@@ -236,6 +299,5 @@ initWebSocket(server);
 // Start server
 server.listen(config.port, async () => {
   console.log(`[SERVER] Anubis WhatsApp Gateway listening on port ${config.port}`);
-  // Initialize Evolution API
   await initEvolution();
 });
