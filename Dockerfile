@@ -1,42 +1,25 @@
-# Stage 1: Build Flutter Web application
-FROM ghcr.io/cirruslabs/flutter:stable AS flutter-builder
+# ==============================================================================
+# Dockerfile de Producción para Chatwoot en Railway
+# ==============================================================================
+# Basado en la imagen oficial probada y precompilada v4.9.2 de Chatwoot
+FROM chatwoot/chatwoot:v4.9.2
 
-WORKDIR /flutter_app
-COPY flutter_app/pubspec.yaml ./
-RUN flutter pub get
+USER root
 
-COPY flutter_app/ ./
-RUN flutter build web --release
+# Copiar script de entrada personalizado para Railway
+COPY docker/entrypoints/railway-entrypoint.sh /app/docker/entrypoints/railway-entrypoint.sh
+RUN chmod +x /app/docker/entrypoints/railway-entrypoint.sh
 
-# Stage 2: Build Node.js TypeScript server
-FROM node:20-alpine AS server-builder
+# Variables de entorno por defecto para producción
+ENV RAILS_ENV=production \
+    NODE_ENV=production \
+    INSTALLATION_ENV=docker \
+    RAILS_SERVE_STATIC_FILES=true \
+    RAILS_LOG_TO_STDOUT=true
 
-WORKDIR /server
-COPY server/package*.json ./
-COPY server/tsconfig.json ./
-RUN npm install
+# Puerto expuesto por defecto (Railway inyecta $PORT en ejecución)
+EXPOSE 3000
 
-COPY server/src/ ./src/
-RUN npm run build
-
-# Stage 3: Minimal Production Image
-FROM node:20-alpine AS runner
-
-WORKDIR /app
-
-ENV PORT=8080
-ENV NODE_ENV=production
-
-# Install only production dependencies
-COPY server/package*.json ./
-RUN npm install --omit=dev
-
-# Copy compiled backend
-COPY --from=server-builder /server/dist ./dist
-
-# Copy compiled Flutter web frontend into public static folder
-COPY --from=flutter-builder /flutter_app/build/web ./public
-
-EXPOSE 8080
-
-CMD ["node", "dist/server.js"]
+# Punto de entrada y comando por defecto
+ENTRYPOINT ["/app/docker/entrypoints/railway-entrypoint.sh"]
+CMD ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
