@@ -270,10 +270,10 @@ export const syncInitialChats = async () => {
       }
     }
 
-    // 3. Fetch Recent Messages
+    // 3. Fetch Recent Messages to populate conversation threads and contact names
     const messagesRes = await evolutionFetch(`/chat/findMessages/${inst}`, {
       method: 'POST',
-      body: { limit: 100 }
+      body: { limit: 300 }
     });
 
     const messagesList = Array.isArray(messagesRes.data)
@@ -285,6 +285,14 @@ export const syncInitialChats = async () => {
         if (!m || !m.key) continue;
         const remoteJid = m.key.remoteJid;
         if (!remoteJid || remoteJid.includes('@broadcast') || remoteJid.endsWith('newsletter')) continue;
+
+        const pushName = m.pushName;
+        if (pushName && pushName !== 'Você' && pushName !== 'Me' && pushName.trim().length > 0) {
+          store.upsertChat({
+            id: remoteJid,
+            name: pushName.trim()
+          });
+        }
 
         const fromMe = Boolean(m.key.fromMe);
         const rawText =

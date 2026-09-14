@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <base href="$FLUTTER_BASE_HREF">
+  <base href="/">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="WhatsApp Desktop Clone for Anubis Store">
@@ -62,14 +62,21 @@
     <div class="title">WhatsApp Web</div>
     <div class="subtitle">Conectando a Anubis Store...</div>
   </div>
+  <script>
+    // Unregister any stale legacy service workers to prevent cached code
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var i = 0; i < registrations.length; i++) {
+          registrations[i].unregister();
+        }
+      });
+    }
+  </script>
   <script src="flutter.js" defer></script>
   <script>
     window.addEventListener('load', function(ev) {
-      // Download main.dart.js
+      // Download main.dart.js without service worker cache locking
       _flutter.loader.loadEntrypoint({
-        serviceWorker: {
-          serviceWorkerVersion: {{flutter_service_worker_version}},
-        },
         onEntrypointLoaded: function(engineInitializer) {
           engineInitializer.initializeEngine().then(function(appRunner) {
             const loading = document.getElementById('loading');

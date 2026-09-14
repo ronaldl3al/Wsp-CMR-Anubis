@@ -59,8 +59,20 @@ class ChatProvider extends ChangeNotifier {
 
   void _initWebSocket() {
     _ws.onChatsInit = (rawList) {
-      _chats = rawList.map((item) => Chat.fromJson(item)).toList();
-      _sortChats();
+      final List<Chat> list = [];
+      for (final item in rawList) {
+        try {
+          if (item is Map) {
+            list.add(Chat.fromJson(item));
+          }
+        } catch (e) {
+          debugPrint('Error parsing chat from socket: $e');
+        }
+      }
+      if (list.isNotEmpty) {
+        _chats = list;
+        _sortChats();
+      }
       _isLoadingChats = false;
       notifyListeners();
     };

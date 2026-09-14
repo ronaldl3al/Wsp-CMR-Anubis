@@ -15,7 +15,17 @@ class LastMessageSnippet {
     this.type = 'chat',
   });
 
-  factory LastMessageSnippet.fromJson(Map<String, dynamic> json) {
+  factory LastMessageSnippet.fromJson(dynamic rawJson) {
+    if (rawJson is! Map) {
+      return LastMessageSnippet(
+        id: '',
+        body: '',
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        fromMe: false,
+        status: 'sent',
+      );
+    }
+    final json = Map<String, dynamic>.from(rawJson);
     return LastMessageSnippet(
       id: json['id']?.toString() ?? '',
       body: json['body']?.toString() ?? '',
@@ -59,12 +69,24 @@ class Chat {
     required this.updatedAt,
   });
 
-  factory Chat.fromJson(Map<String, dynamic> json) {
+  factory Chat.fromJson(dynamic rawJson) {
+    if (rawJson is! Map) {
+      return Chat(id: '', name: '', number: '', updatedAt: 0);
+    }
+    final json = Map<String, dynamic>.from(rawJson);
+    final rawId = json['id']?.toString() ?? '';
+    final userPart = rawId.contains('@') ? rawId.split('@').first : rawId;
+    final candidateName = json['name']?.toString() ?? '';
+
+    final name = (candidateName.isNotEmpty && candidateName != rawId)
+        ? candidateName
+        : (json['number']?.toString().isNotEmpty == true ? json['number'].toString() : userPart);
+
     return Chat(
-      id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? json['number']?.toString() ?? json['id']?.toString().split('@').first ?? 'Desconocido',
-      number: json['number']?.toString() ?? json['id']?.toString().split('@').first ?? '',
-      isGroup: json['isGroup'] == true || (json['id']?.toString().contains('@g.us') ?? false),
+      id: rawId,
+      name: name.isNotEmpty ? name : 'Contacto',
+      number: json['number']?.toString() ?? userPart,
+      isGroup: json['isGroup'] == true || rawId.contains('@g.us'),
       profilePicUrl: json['profilePicUrl']?.toString(),
       lastMessage: json['lastMessage'] != null ? LastMessageSnippet.fromJson(json['lastMessage']) : null,
       unreadCount: (json['unreadCount'] is num) ? (json['unreadCount'] as num).toInt() : 0,

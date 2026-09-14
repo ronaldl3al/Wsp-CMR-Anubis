@@ -27,7 +27,17 @@ class Message {
     this.senderName,
   });
 
-  factory Message.fromJson(Map<String, dynamic> json) {
+  factory Message.fromJson(dynamic rawJson) {
+    if (rawJson is! Map) {
+      return Message(
+        id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+        chatId: '',
+        body: '',
+        fromMe: false,
+        timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      );
+    }
+    final json = Map<String, dynamic>.from(rawJson);
     return Message(
       id: json['id']?.toString() ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
       chatId: json['chatId']?.toString() ?? '',

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/chat.dart';
 import '../models/message.dart';
@@ -7,7 +8,6 @@ import '../models/connection_state.dart';
 
 class ApiService {
   static String get baseUrl {
-    // In Flutter Web, Uri.base is the origin (e.g. https://wsp-cmr-anubis-production.up.railway.app)
     final origin = Uri.base.origin;
     if (origin.isNotEmpty && !origin.contains('null')) {
       return origin;
@@ -19,11 +19,23 @@ class ApiService {
     try {
       final res = await http.get(Uri.parse('$baseUrl/api/chats'));
       if (res.statusCode == 200) {
-        final List list = jsonDecode(res.body);
-        return list.map((item) => Chat.fromJson(item)).toList();
+        final dynamic decoded = jsonDecode(res.body);
+        if (decoded is List) {
+          final List<Chat> list = [];
+          for (final item in decoded) {
+            try {
+              if (item is Map) {
+                list.add(Chat.fromJson(item));
+              }
+            } catch (e) {
+              debugPrint('Error parsing chat item: $e');
+            }
+          }
+          return list;
+        }
       }
     } catch (e) {
-      // ignore or log
+      debugPrint('Error in getChats: $e');
     }
     return [];
   }
@@ -32,13 +44,22 @@ class ApiService {
     try {
       final res = await http.get(Uri.parse('$baseUrl/api/sync'));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data['chats'] is List) {
-          final List list = data['chats'];
-          return list.map((item) => Chat.fromJson(item)).toList();
+        final dynamic data = jsonDecode(res.body);
+        if (data is Map && data['chats'] is List) {
+          final List<Chat> list = [];
+          for (final item in data['chats']) {
+            try {
+              if (item is Map) {
+                list.add(Chat.fromJson(item));
+              }
+            } catch (_) {}
+          }
+          return list;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error in syncChats: $e');
+    }
     return [];
   }
 
@@ -47,11 +68,23 @@ class ApiService {
       final encoded = Uri.encodeComponent(chatId);
       final res = await http.get(Uri.parse('$baseUrl/api/chats/$encoded/messages'));
       if (res.statusCode == 200) {
-        final List list = jsonDecode(res.body);
-        return list.map((item) => Message.fromJson(item)).toList();
+        final dynamic decoded = jsonDecode(res.body);
+        if (decoded is List) {
+          final List<Message> list = [];
+          for (final item in decoded) {
+            try {
+              if (item is Map) {
+                list.add(Message.fromJson(item));
+              }
+            } catch (e) {
+              debugPrint('Error parsing message item: $e');
+            }
+          }
+          return list;
+        }
       }
     } catch (e) {
-      // ignore
+      debugPrint('Error in getMessages: $e');
     }
     return [];
   }
@@ -74,7 +107,7 @@ class ApiService {
         }
       }
     } catch (e) {
-      // ignore
+      debugPrint('Error in sendTextMessage: $e');
     }
     return null;
   }
@@ -105,7 +138,7 @@ class ApiService {
         }
       }
     } catch (e) {
-      // ignore
+      debugPrint('Error in sendMediaMessage: $e');
     }
     return null;
   }
