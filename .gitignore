@@ -1,5 +1,12 @@
 node_modules/
-build/
 dist/
+build/
 .env
 *.log
+
+# Flutter artifacts
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+*.lock
