@@ -419,3 +419,45 @@ export async function getBase64FromMedia(messageId: string): Promise<{ base64: s
   }
   return null;
 }
+
+export async function updateMessage(chatJid: string, messageId: string, newText: string): Promise<boolean> {
+  const inst = encodeURIComponent(config.evolution.instanceName);
+  const number = chatJid.replace(/@.+$/, '');
+  try {
+    const res = await evolutionFetch(`/chat/updateMessage/${inst}`, {
+      method: 'POST',
+      body: {
+        number,
+        key: {
+          remoteJid: chatJid,
+          fromMe: true,
+          id: messageId
+        },
+        text: newText
+      }
+    });
+    return res.ok;
+  } catch (err: any) {
+    console.error(`[EVOLUTION] Error editing message ${messageId}:`, err.message);
+    return false;
+  }
+}
+
+export async function deleteMessageForEveryone(chatJid: string, messageId: string): Promise<boolean> {
+  const inst = encodeURIComponent(config.evolution.instanceName);
+  try {
+    const res = await evolutionFetch(`/chat/deleteMessageForEveryone/${inst}`, {
+      method: 'DELETE',
+      body: {
+        remoteJid: chatJid,
+        id: messageId,
+        fromMe: true
+      }
+    });
+    return res.ok;
+  } catch (err: any) {
+    console.error(`[EVOLUTION] Error deleting message ${messageId} for everyone:`, err.message);
+    return false;
+  }
+}
+

@@ -85,3 +85,32 @@ export async function createQuickNote(title: string, content: string, category?:
 export async function deleteQuickNote(id: number): Promise<void> {
   await fetch(`${API_BASE}/quick-notes/${id}`, { method: 'DELETE' });
 }
+
+export async function updateMessage(chatJid: string, messageId: string, text: string): Promise<Message> {
+  const res = await fetch(`${API_BASE}/chats/${encodeURIComponent(chatJid)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  if (!res.ok) throw new Error('Error al actualizar mensaje');
+  return res.json();
+}
+
+export async function deleteMessage(chatJid: string, messageId: string): Promise<{ success: boolean; messageId: string }> {
+  const res = await fetch(`${API_BASE}/chats/${encodeURIComponent(chatJid)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) throw new Error('Error al eliminar mensaje');
+  return res.json();
+}
+
+export async function togglePinMessage(chatJid: string, messageId: string, pinned?: boolean): Promise<Message> {
+  const res = await fetch(`${API_BASE}/chats/${encodeURIComponent(chatJid)}/messages/${encodeURIComponent(messageId)}/pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pinned })
+  });
+  if (!res.ok) throw new Error('Error al fijar mensaje');
+  return res.json();
+}
+

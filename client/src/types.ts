@@ -43,6 +43,9 @@ export interface Message {
   status: MessageAck;
   quoted_id?: string;
   timestamp: number;
+  is_pinned?: boolean;
+  is_edited?: boolean;
+  is_deleted?: boolean;
   created_at?: string;
 }
 

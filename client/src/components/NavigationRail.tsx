@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Users, BookOpen, RefreshCw } from 'lucide-react';
+import { MessageSquare, Users, BookOpen, RefreshCw, Palette } from 'lucide-react';
 
 export type NavTab = 'chats' | 'contacts';
 
@@ -8,6 +8,7 @@ interface NavigationRailProps {
   onSelectTab: (tab: NavTab) => void;
   onOpenQuickNotes: () => void;
   onSyncContacts: () => void;
+  onOpenThemeModal?: () => void;
   isSyncing: boolean;
   totalUnreadCount: number;
   connectionState: 'open' | 'connecting' | 'close';
@@ -18,6 +19,7 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
   onSelectTab,
   onOpenQuickNotes,
   onSyncContacts,
+  onOpenThemeModal,
   isSyncing,
   totalUnreadCount,
   connectionState
@@ -77,6 +79,15 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
 
       {/* Bottom Section */}
       <div className="flex flex-col items-center gap-3 w-full">
+        {/* Theme Palette Button */}
+        <button
+          onClick={onOpenThemeModal}
+          className="w-10 h-10 rounded-full flex items-center justify-center text-[#8696a0] hover:text-[#00a884] hover:bg-[#374248]/50 transition"
+          title="Personalización de colores y apariencia"
+        >
+          <Palette size={20} />
+        </button>
+
         {/* Sync Contacts Button */}
         <button
           onClick={onSyncContacts}

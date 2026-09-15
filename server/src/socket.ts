@@ -54,3 +54,22 @@ export function broadcastConnectionStatus(status: 'open' | 'connecting' | 'close
   if (!io) return;
   io.emit('connection:status', { status });
 }
+
+export function broadcastMessageEdited(message: Message) {
+  if (!io) return;
+  io.emit('message:edited', message);
+  io.to(message.chat_jid).emit('message:edited', message);
+}
+
+export function broadcastMessageDeleted(messageId: string, chatJid: string) {
+  if (!io) return;
+  io.emit('message:deleted', { messageId, chatJid });
+  io.to(chatJid).emit('message:deleted', { messageId, chatJid });
+}
+
+export function broadcastMessagePinned(message: Message) {
+  if (!io) return;
+  io.emit('message:pinned', message);
+  io.to(message.chat_jid).emit('message:pinned', message);
+}
+

@@ -23,18 +23,27 @@ export function getSocket(): Socket {
 export function subscribeToMessages(
   onNewMessage: (data: { message: Message; chat: Chat }) => void,
   onMessageAck: (data: { messageId: string; status: MessageAck; chatJid?: string }) => void,
-  onStatusChange: (data: { status: 'open' | 'connecting' | 'close' }) => void
+  onStatusChange: (data: { status: 'open' | 'connecting' | 'close' }) => void,
+  onMessageEdited?: (message: Message) => void,
+  onMessageDeleted?: (data: { messageId: string; chatJid: string }) => void,
+  onMessagePinned?: (message: Message) => void
 ) {
   const s = getSocket();
 
   s.on('message:new', onNewMessage);
   s.on('message:ack', onMessageAck);
   s.on('connection:status', onStatusChange);
+  if (onMessageEdited) s.on('message:edited', onMessageEdited);
+  if (onMessageDeleted) s.on('message:deleted', onMessageDeleted);
+  if (onMessagePinned) s.on('message:pinned', onMessagePinned);
 
   return () => {
     s.off('message:new', onNewMessage);
     s.off('message:ack', onMessageAck);
     s.off('connection:status', onStatusChange);
+    if (onMessageEdited) s.off('message:edited', onMessageEdited);
+    if (onMessageDeleted) s.off('message:deleted', onMessageDeleted);
+    if (onMessagePinned) s.off('message:pinned', onMessagePinned);
   };
 }
 

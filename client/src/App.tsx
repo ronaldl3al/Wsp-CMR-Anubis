@@ -7,9 +7,11 @@ import { ContactsModal } from './components/ContactsModal';
 import { QuickNotesDrawer } from './components/QuickNotesDrawer';
 import { NewChatModal } from './components/NewChatModal';
 import { MediaModal } from './components/MediaModal';
+import { ThemeModal } from './components/ThemeModal';
 import { Chat, Message, Contact, QuickNote, MessageAck } from './types';
 import * as api from './services/api';
 import * as socketService from './services/socket';
+import { getSavedTheme, applyTheme } from './utils/theme';
 
 export const App: React.FC = () => {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -25,12 +27,18 @@ export const App: React.FC = () => {
   const [isContactsOpen, setIsContactsOpen] = useState(false);
   const [isQuickNotesOpen, setIsQuickNotesOpen] = useState(false);
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [isThemeOpen, setIsThemeOpen] = useState(false);
   const [mediaModalData, setMediaModalData] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
 
   // Connection & Sync state
   const [connectionState, setConnectionState] = useState<'open' | 'connecting' | 'close'>('connecting');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+
+  // Apply saved theme on startup
+  useEffect(() => {
+    applyTheme(getSavedTheme());
+  }, []);
 
   // Load initial data
   useEffect(() => {
@@ -100,6 +108,31 @@ export const App: React.FC = () => {
       // On connection state change
       ({ status }) => {
         setConnectionState(status);
+      },
+
+      // On message edited
+      (editedMsg) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === editedMsg.id ? { ...m, ...editedMsg } : m))
+        );
+      },
+
+      // On message deleted
+      ({ messageId }) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, is_deleted: true, body: '🚫 Este mensaje fue eliminado' }
+              : m
+          )
+        );
+      },
+
+      // On message pinned
+      (pinnedMsg) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === pinnedMsg.id ? { ...m, is_pinned: pinnedMsg.is_pinned } : m))
+        );
       }
     );
 
@@ -267,6 +300,45 @@ export const App: React.FC = () => {
     handleSendMessage(content);
   };
 
+  // Message Actions (Edit, Delete, Pin)
+  const handleUpdateMessage = async (messageId: string, newText: string) => {
+    if (!selectedChat) return;
+    try {
+      const updated = await api.updateMessage(selectedChat.jid, messageId, newText);
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
+    } catch (err: any) {
+      console.error('[APP] Error editing message:', err);
+      alert('Error al editar mensaje: ' + err.message);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!selectedChat) return;
+    try {
+      await api.deleteMessage(selectedChat.jid, messageId);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, is_deleted: true, body: '🚫 Este mensaje fue eliminado' }
+            : m
+        )
+      );
+    } catch (err: any) {
+      console.error('[APP] Error deleting message:', err);
+      alert('Error al eliminar mensaje: ' + err.message);
+    }
+  };
+
+  const handleTogglePin = async (messageId: string, pinned?: boolean) => {
+    if (!selectedChat) return;
+    try {
+      const updated = await api.togglePinMessage(selectedChat.jid, messageId, pinned);
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? updated : m)));
+    } catch (err: any) {
+      console.error('[APP] Error pinning message:', err);
+    }
+  };
+
   const totalUnreadCount = chats.reduce((acc, c) => acc + (c.unread_count || 0), 0);
 
   return (
@@ -277,6 +349,7 @@ export const App: React.FC = () => {
         onSelectTab={setActiveNavTab}
         onOpenQuickNotes={() => setIsQuickNotesOpen(true)}
         onSyncContacts={handleSyncContacts}
+        onOpenThemeModal={() => setIsThemeOpen(true)}
         isSyncing={isSyncing}
         totalUnreadCount={totalUnreadCount}
         connectionState={connectionState}
@@ -314,6 +387,9 @@ export const App: React.FC = () => {
         onOpenMedia={(url, type) => setMediaModalData({ url, type })}
         onSyncChatHistory={handleSyncChatHistory}
         isSyncingHistory={isSyncingHistory}
+        onUpdateMessage={handleUpdateMessage}
+        onDeleteMessage={handleDeleteMessage}
+        onTogglePin={handleTogglePin}
       />
 
       {/* Modals & Drawers */}
@@ -346,6 +422,11 @@ export const App: React.FC = () => {
         url={mediaModalData?.url || null}
         type={mediaModalData?.type || 'image'}
         onClose={() => setMediaModalData(null)}
+      />
+
+      <ThemeModal
+        isOpen={isThemeOpen}
+        onClose={() => setIsThemeOpen(false)}
       />
     </div>
   );

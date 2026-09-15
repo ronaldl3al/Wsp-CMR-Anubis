@@ -69,6 +69,10 @@ export async function initDatabase() {
         category VARCHAR(50) DEFAULT 'General',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE wsp_messages ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
+      ALTER TABLE wsp_messages ADD COLUMN IF NOT EXISTS is_edited BOOLEAN DEFAULT FALSE;
+      ALTER TABLE wsp_messages ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
     `);
 
     // Seed initial quick notes if none exist
@@ -305,6 +309,29 @@ export async function updateMessageStatus(id: string, status: MessageAck): Promi
   );
 
   return msg;
+}
+
+export async function updateMessageBody(id: string, newBody: string): Promise<Message | null> {
+  const query = 'UPDATE wsp_messages SET body = $1, is_edited = TRUE WHERE id = $2 RETURNING *';
+  const res = await pool.query(query, [newBody, id]);
+  return res.rows[0] || null;
+}
+
+export async function deleteMessage(id: string): Promise<Message | null> {
+  const query = "UPDATE wsp_messages SET body = '🚫 Este mensaje fue eliminado', is_deleted = TRUE WHERE id = $1 RETURNING *";
+  const res = await pool.query(query, [id]);
+  return res.rows[0] || null;
+}
+
+export async function toggleMessagePin(id: string, pinned?: boolean): Promise<Message | null> {
+  let query = 'UPDATE wsp_messages SET is_pinned = NOT is_pinned WHERE id = $1 RETURNING *';
+  let values: any[] = [id];
+  if (typeof pinned === 'boolean') {
+    query = 'UPDATE wsp_messages SET is_pinned = $1 WHERE id = $2 RETURNING *';
+    values = [pinned, id];
+  }
+  const res = await pool.query(query, values);
+  return res.rows[0] || null;
 }
 
 // Quick Notes CRUD

@@ -30,9 +30,17 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
+:root {
+  --color-bg-chat: #0b141a;
+  --color-bg-nav: #202c33;
+  --color-bg-sidebar: #111b21;
+  --color-bubble-me: #005c4b;
+  --color-accent: #00a884;
+}
+
 /* WhatsApp Doodle Chat Background */
 .whatsapp-chat-bg {
-  background-color: #0b141a;
-  background-image: radial-gradient(#15222b 1px, transparent 1px);
+  background-color: var(--color-bg-chat, #0b141a);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 20px 20px;
 }

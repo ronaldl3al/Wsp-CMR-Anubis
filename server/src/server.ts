@@ -114,6 +114,65 @@ app.post('/api/chats/:jid/sync-messages', async (req, res) => {
   }
 });
 
+// Edit Message (WhatsApp updateMessage + DB + Socket)
+app.put('/api/chats/:jid/messages/:id', async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: 'Missing text in request body' });
+    }
+
+    // Attempt Evolution update
+    await evolution.updateMessage(req.params.jid, req.params.id, text);
+
+    // Update in DB
+    const updated = await db.updateMessageBody(req.params.id, text);
+    if (!updated) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    socket.broadcastMessageEdited(updated);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete Message For Everyone (WhatsApp deleteMessageForEveryone + DB + Socket)
+app.delete('/api/chats/:jid/messages/:id', async (req, res) => {
+  try {
+    // Attempt Evolution delete
+    await evolution.deleteMessageForEveryone(req.params.jid, req.params.id);
+
+    // Update in DB as deleted
+    const deleted = await db.deleteMessage(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    socket.broadcastMessageDeleted(req.params.id, req.params.jid);
+    res.json({ success: true, messageId: req.params.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pin / Unpin Message
+app.post('/api/chats/:jid/messages/:id/pin', async (req, res) => {
+  try {
+    const { pinned } = req.body;
+    const updated = await db.toggleMessagePin(req.params.id, pinned);
+    if (!updated) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    socket.broadcastMessagePinned(updated);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Outbound Messaging
 app.post('/api/messages/send-text', async (req, res) => {
   try {

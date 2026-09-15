@@ -1,16 +1,23 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { Check, CheckCheck, Clock, FileText, Download, Image as ImageIcon } from 'lucide-react';
+import { Check, CheckCheck, Clock, FileText, Download, Image as ImageIcon, Pin } from 'lucide-react';
 import { Message } from '../types';
 import { AudioPlayer } from './AudioPlayer';
+import { WhatsAppText } from './WhatsAppText';
 
 interface MessageItemProps {
   message: Message;
   onOpenMedia: (url: string, type: 'image' | 'video') => void;
+  onContextMenu?: (e: React.MouseEvent, message: Message) => void;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }) => {
+export const MessageItem: React.FC<MessageItemProps> = ({
+  message,
+  onOpenMedia,
+  onContextMenu
+}) => {
   const isMe = message.from_me;
+  const isDeleted = message.is_deleted || message.body === '🚫 Este mensaje fue eliminado';
 
   // Format timestamp (seconds to ms)
   const timeString = message.timestamp
@@ -18,7 +25,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
     : '';
 
   const renderStatus = () => {
-    if (!isMe) return null;
+    if (!isMe || isDeleted) return null;
     switch (message.status) {
       case 'pending':
         return <Clock size={14} className="text-[#8696a0]" />;
@@ -34,6 +41,15 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
   };
 
   const renderContent = () => {
+    if (isDeleted) {
+      return (
+        <p className="text-[13.5px] italic text-[#8696a0] flex items-center gap-1.5 py-0.5">
+          <span className="opacity-70 text-sm">🚫</span>
+          <span>Este mensaje fue eliminado</span>
+        </p>
+      );
+    }
+
     switch (message.type) {
       case 'image':
         return (
@@ -52,9 +68,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
               </div>
             )}
             {message.body && message.body !== '[image]' && (
-              <p className="text-[14.2px] text-[#e9edef] whitespace-pre-wrap break-words px-1 pt-1">
-                {message.body}
-              </p>
+              <div className="px-1 pt-1">
+                <WhatsAppText text={message.body} className="text-[14.2px] text-[#e9edef]" />
+              </div>
             )}
           </div>
         );
@@ -74,9 +90,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
               </div>
             )}
             {message.body && message.body !== '[video]' && (
-              <p className="text-[14.2px] text-[#e9edef] whitespace-pre-wrap break-words px-1 pt-1">
-                {message.body}
-              </p>
+              <div className="px-1 pt-1">
+                <WhatsAppText text={message.body} className="text-[14.2px] text-[#e9edef]" />
+              </div>
             )}
           </div>
         );
@@ -96,7 +112,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
               <p className="text-[13px] font-medium text-[#e9edef] truncate">
                 {message.media_filename || 'Documento'}
               </p>
-              <p className="text-[11px] text-[#8696a0] uppercase">{message.media_mimetype?.split('/')[1] || 'Archivo'}</p>
+              <p className="text-[11px] text-[#8696a0] uppercase">
+                {message.media_mimetype?.split('/')[1] || 'Archivo'}
+              </p>
             </div>
             {message.media_url && (
               <a
@@ -112,18 +130,29 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
 
       default:
         return (
-          <p className="text-[14.2px] leading-[19px] text-[#e9edef] whitespace-pre-wrap break-words">
-            {message.body}
-          </p>
+          <WhatsAppText
+            text={message.body}
+            className="text-[14.2px] leading-[19px] text-[#e9edef]"
+          />
         );
     }
   };
 
   return (
-    <div className={`flex w-full my-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+    <div
+      id={`msg-${message.id}`}
+      className={`flex w-full my-1 ${isMe ? 'justify-end' : 'justify-start'}`}
+    >
       <div
-        className={`relative max-w-[75%] md:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm text-sm ${
-          isMe
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onContextMenu?.(e, message);
+        }}
+        style={isMe && !isDeleted ? { backgroundColor: 'var(--color-bubble-me, #005c4b)' } : {}}
+        className={`relative max-w-[78%] md:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm text-sm cursor-pointer select-text ${
+          isDeleted
+            ? 'bg-[#202c33]/70 border border-white/5'
+            : isMe
             ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none'
             : 'bg-[#202c33] text-[#e9edef] rounded-tl-none'
         }`}
@@ -138,8 +167,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
         {/* Bubble content */}
         <div>{renderContent()}</div>
 
-        {/* Timestamp and Ack Checks */}
-        <div className="flex items-center justify-end gap-1 mt-1 text-[11px] text-[#8696a0] float-right ml-2 -mb-0.5">
+        {/* Timestamp, Pin, Edited, and Ack Checks */}
+        <div className="flex items-center justify-end gap-1 mt-1 text-[11px] text-[#8696a0] float-right ml-2 -mb-0.5 select-none">
+          {message.is_pinned && (
+            <span title="Mensaje fijado">
+              <Pin size={11} className="text-[#8696a0] -rotate-45" />
+            </span>
+          )}
+          {message.is_edited && !isDeleted && (
+            <span className="text-[10px] text-[#8696a0] italic mr-0.5">editado</span>
+          )}
           <span>{timeString}</span>
           {renderStatus()}
         </div>
