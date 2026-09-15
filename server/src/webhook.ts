@@ -107,9 +107,10 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
         if (!msgId || rawStatus === undefined) continue;
 
         let ack: MessageAck = 'sent';
-        if (rawStatus === 3 || rawStatus === 'READ') ack = 'read';
-        else if (rawStatus === 2 || rawStatus === 'DELIVERED') ack = 'delivered';
-        else if (rawStatus === 1 || rawStatus === 'SENT') ack = 'sent';
+        const strStatus = String(rawStatus).toUpperCase();
+        if (rawStatus === 3 || rawStatus === 4 || strStatus === 'READ' || strStatus === 'PLAYED') ack = 'read';
+        else if (rawStatus === 2 || strStatus === 'DELIVERED' || strStatus === 'DELIVERY_ACK') ack = 'delivered';
+        else if (rawStatus === 1 || strStatus === 'SENT' || strStatus === 'SERVER_ACK') ack = 'sent';
 
         const updated = await db.updateMessageStatus(msgId, ack);
         if (updated) {

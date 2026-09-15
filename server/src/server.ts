@@ -90,6 +90,15 @@ app.post('/api/chats/:jid/read', async (req, res) => {
   }
 });
 
+app.post('/api/chats/:jid/sync-messages', async (req, res) => {
+  try {
+    const messages = await evolution.syncChatMessages(req.params.jid);
+    res.json({ success: true, count: messages.length, messages });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Outbound Messaging
 app.post('/api/messages/send-text', async (req, res) => {
   try {

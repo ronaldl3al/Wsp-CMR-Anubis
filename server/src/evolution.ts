@@ -229,7 +229,7 @@ export async function sendMediaMessage(
     endpoint = `/message/sendWhatsAppAudio/${inst}`;
     payload = {
       number: destination,
-      audio: `data:${mimetype};base64,${cleanBase64}`
+      audio: cleanBase64
     };
   } else {
     let mediatype: 'image' | 'video' | 'document' = 'document';
@@ -241,7 +241,7 @@ export async function sendMediaMessage(
       mediatype,
       mimetype,
       caption: caption || '',
-      media: `data:${mimetype};base64,${cleanBase64}`,
+      media: cleanBase64,
       fileName: fileName || `file_${Date.now()}`
     };
   }
@@ -261,13 +261,17 @@ export async function sendMediaMessage(
   else if (mimetype.startsWith('image/')) type = 'image';
   else if (mimetype.startsWith('video/')) type = 'video';
 
+  const fullDataUri = mediaBase64.startsWith('data:')
+    ? mediaBase64
+    : `data:${mimetype};base64,${cleanBase64}`;
+
   const message: Message = {
     id: msgId,
     chat_jid: targetJid,
     from_me: true,
     body: caption || `[${type}]`,
     type,
-    media_url: `data:${mimetype};base64,${cleanBase64}`,
+    media_url: fullDataUri,
     media_mimetype: mimetype,
     media_filename: fileName || `file_${Date.now()}`,
     status: res.ok ? 'sent' : 'pending',
@@ -276,6 +280,95 @@ export async function sendMediaMessage(
 
   const { message: savedMsg } = await db.addMessage(message);
   return savedMsg;
+}
+
+export async function syncChatMessages(chatJid: string): Promise<Message[]> {
+  const inst = encodeURIComponent(config.evolution.instanceName);
+  console.log(`[EVOLUTION] Syncing historical messages for chat: ${chatJid}...`);
+
+  const payload = {
+    where: {
+      key: {
+        remoteJid: chatJid
+      }
+    },
+    limit: 50
+  };
+
+  const res = await evolutionFetch(`/chat/findMessages/${inst}`, {
+    method: 'POST',
+    body: payload
+  });
+
+  const records = res.data?.messages?.records || res.data?.records || (Array.isArray(res.data) ? res.data : []);
+  const savedMessages: Message[] = [];
+
+  for (const item of records) {
+    if (!item || !item.key) continue;
+    const msgId = item.key.id;
+    if (!msgId) continue;
+
+    const fromMe = Boolean(item.key.fromMe);
+    const msgObj = item.message || {};
+    const text =
+      msgObj.conversation ||
+      msgObj.extendedTextMessage?.text ||
+      msgObj.imageMessage?.caption ||
+      msgObj.videoMessage?.caption ||
+      msgObj.documentMessage?.caption ||
+      '';
+
+    let type: Message['type'] = 'chat';
+    let mediaMimetype: string | undefined;
+    let mediaFilename: string | undefined;
+    let mediaUrl: string | undefined;
+
+    if (msgObj.imageMessage) {
+      type = 'image';
+      mediaMimetype = msgObj.imageMessage.mimetype || 'image/jpeg';
+      mediaUrl = item.base64 ? `data:${mediaMimetype};base64,${item.base64}` : undefined;
+    } else if (msgObj.videoMessage) {
+      type = 'video';
+      mediaMimetype = msgObj.videoMessage.mimetype || 'video/mp4';
+      mediaUrl = item.base64 ? `data:${mediaMimetype};base64,${item.base64}` : undefined;
+    } else if (msgObj.audioMessage) {
+      type = 'audio';
+      mediaMimetype = msgObj.audioMessage.mimetype || 'audio/ogg';
+      mediaUrl = item.base64 ? `data:${mediaMimetype};base64,${item.base64}` : undefined;
+    } else if (msgObj.documentMessage) {
+      type = 'document';
+      mediaMimetype = msgObj.documentMessage.mimetype || 'application/octet-stream';
+      mediaFilename = msgObj.documentMessage.fileName;
+      mediaUrl = item.base64 ? `data:${mediaMimetype};base64,${item.base64}` : undefined;
+    }
+
+    const timestamp = Number(item.messageTimestamp) || Math.floor(Date.now() / 1000);
+    let status: MessageAck = fromMe ? 'sent' : 'delivered';
+    const rawStatus = item.status;
+    if (rawStatus === 3 || rawStatus === 'READ' || rawStatus === 'PLAYED') status = 'read';
+    else if (rawStatus === 2 || rawStatus === 'DELIVERY_ACK' || rawStatus === 'DELIVERED') status = 'delivered';
+    else if (rawStatus === 1 || rawStatus === 'SERVER_ACK' || rawStatus === 'SENT') status = 'sent';
+
+    const message: Message = {
+      id: msgId,
+      chat_jid: chatJid,
+      sender_jid: item.key.participant || chatJid,
+      sender_name: item.pushName || undefined,
+      from_me: fromMe,
+      body: text || (type !== 'chat' ? `[${type}]` : ''),
+      type,
+      media_url: mediaUrl,
+      media_mimetype: mediaMimetype,
+      media_filename: mediaFilename,
+      status,
+      timestamp
+    };
+
+    const { message: saved } = await db.addMessage(message);
+    savedMessages.push(saved);
+  }
+
+  return savedMessages;
 }
 
 export async function markChatRead(chatJid: string): Promise<void> {

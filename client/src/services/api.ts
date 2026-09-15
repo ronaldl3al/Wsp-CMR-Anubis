@@ -60,6 +60,14 @@ export async function syncChats(): Promise<{ chats: Chat[] }> {
   return res.json();
 }
 
+export async function syncChatMessages(chatJid: string): Promise<{ success: boolean; count: number; messages: Message[] }> {
+  const res = await fetch(`${API_BASE}/chats/${encodeURIComponent(chatJid)}/sync-messages`, {
+    method: 'POST'
+  });
+  if (!res.ok) throw new Error('Error al sincronizar historial');
+  return res.json();
+}
+
 export async function fetchQuickNotes(): Promise<QuickNote[]> {
   const res = await fetch(`${API_BASE}/quick-notes`);
   return res.json();

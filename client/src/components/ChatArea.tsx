@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Paperclip, Smile, MoreVertical, Search, BookOpen, Users, Phone } from 'lucide-react';
+import { Send, Paperclip, Smile, MoreVertical, Search, BookOpen, Users, Phone, RefreshCw, History } from 'lucide-react';
 import { Chat, Message } from '../types';
 import { MessageItem } from './MessageItem';
+import { formatPhoneNumber } from '../utils/phone';
 
 interface ChatAreaProps {
   chat: Chat | null;
@@ -10,6 +11,8 @@ interface ChatAreaProps {
   onSendMedia: (file: File, caption?: string) => void;
   onOpenQuickNotes: () => void;
   onOpenMedia: (url: string, type: 'image' | 'video') => void;
+  onSyncChatHistory: () => Promise<void>;
+  isSyncingHistory: boolean;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -18,7 +21,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onSendMessage,
   onSendMedia,
   onOpenQuickNotes,
-  onOpenMedia
+  onOpenMedia,
+  onSyncChatHistory,
+  isSyncingHistory
 }) => {
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -87,6 +92,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     );
   }
 
+  const displayTitle = chat.is_group ? chat.name : formatPhoneNumber(chat.number || chat.jid);
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0b141a] relative">
       {/* Chat Header */}
@@ -94,27 +101,38 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-full overflow-hidden bg-[#2a3942] flex items-center justify-center text-white shrink-0">
             {chat.profile_pic_url ? (
-              <img src={chat.profile_pic_url} alt={chat.name} className="w-full h-full object-cover" />
+              <img src={chat.profile_pic_url} alt={displayTitle} className="w-full h-full object-cover" />
             ) : chat.is_group ? (
               <Users size={20} className="text-[#8696a0]" />
             ) : (
-              <span className="font-semibold uppercase text-base">
-                {(chat.name || chat.number || 'U').charAt(0)}
-              </span>
+              <Phone size={18} className="text-[#8696a0]" />
             )}
           </div>
           <div className="min-w-0">
             <h2 className="text-[16px] font-medium text-[#e9edef] truncate leading-tight">
-              {chat.name || chat.number}
+              {displayTitle}
             </h2>
             <p className="text-[12px] text-[#8696a0] truncate">
-              {chat.is_group ? 'Grupo de WhatsApp' : `+${chat.number}`}
+              {chat.is_group ? 'Grupo de WhatsApp' : 'WhatsApp'}
             </p>
           </div>
         </div>
 
         {/* Header Actions */}
-        <div className="flex items-center gap-3 text-[#aebac1]">
+        <div className="flex items-center gap-2 text-[#aebac1]">
+          {/* Sync History for this chat */}
+          <button
+            onClick={onSyncChatHistory}
+            disabled={isSyncingHistory}
+            className={`p-2 rounded-full hover:bg-white/10 transition flex items-center gap-1 text-xs ${
+              isSyncingHistory ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-[#00a884]'
+            }`}
+            title="Recuperar historial previo de este chat desde WhatsApp"
+          >
+            <RefreshCw size={18} className={isSyncingHistory ? 'animate-spin' : ''} />
+            <span className="hidden lg:inline text-[11.5px]">Recuperar Historial</span>
+          </button>
+
           <button
             onClick={onOpenQuickNotes}
             className="p-2 rounded-full hover:bg-white/10 transition"
@@ -134,10 +152,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Messages Thread with WhatsApp Doodle Pattern */}
       <div className="flex-1 overflow-y-auto px-4 md:px-12 py-4 whatsapp-chat-bg">
         {messages.length === 0 ? (
-          <div className="flex justify-center items-center h-full">
+          <div className="flex flex-col justify-center items-center h-full gap-3">
             <span className="bg-[#182229] text-[#8696a0] text-xs px-3 py-1.5 rounded-md shadow">
-              No hay mensajes anteriores en este chat. ¡Escribe el primero!
+              No hay mensajes recientes guardados para este número.
             </span>
+            <button
+              onClick={onSyncChatHistory}
+              disabled={isSyncingHistory}
+              className="bg-[#00a884] hover:bg-[#008f6f] text-white text-xs px-4 py-2 rounded-lg shadow font-medium transition flex items-center gap-1.5"
+            >
+              <History size={15} />
+              {isSyncingHistory ? 'Recuperando mensajes...' : 'Recuperar historial de este chat'}
+            </button>
           </div>
         ) : (
           messages.map((message) => (

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { NavigationRail, NavTab } from './components/NavigationRail';
 import { Sidebar } from './components/Sidebar';
+import { ContactsPanel } from './components/ContactsPanel';
 import { ChatArea } from './components/ChatArea';
 import { ContactsModal } from './components/ContactsModal';
 import { QuickNotesDrawer } from './components/QuickNotesDrawer';
@@ -16,6 +18,9 @@ export const App: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
 
+  // Navigation tab: 'chats' or 'contacts'
+  const [activeNavTab, setActiveNavTab] = useState<NavTab>('chats');
+
   // Modals state
   const [isContactsOpen, setIsContactsOpen] = useState(false);
   const [isQuickNotesOpen, setIsQuickNotesOpen] = useState(false);
@@ -25,6 +30,7 @@ export const App: React.FC = () => {
   // Connection & Sync state
   const [connectionState, setConnectionState] = useState<'open' | 'connecting' | 'close'>('connecting');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingHistory, setIsSyncingHistory] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -157,19 +163,36 @@ export const App: React.FC = () => {
     }
   };
 
-  // Send Media Message
+  // Send Media Message (Images, Audio Voice Notes, Video, Docs)
   const handleSendMedia = async (file: File, caption?: string) => {
     if (!selectedChat) return;
 
     try {
       const sentMsg = await api.sendMediaMessage(selectedChat.jid, file, caption);
       setMessages((prev) => [...prev, sentMsg]);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[APP] Error sending media:', err);
+      alert(`Error al enviar archivo: ${err.message || 'Verifica el tamaño'}`);
     }
   };
 
-  // Sync Contacts (Safe: only writes to Postgres)
+  // Sync History for the active chat on demand
+  const handleSyncChatHistory = async () => {
+    if (!selectedChat) return;
+    setIsSyncingHistory(true);
+    try {
+      const res = await api.syncChatMessages(selectedChat.jid);
+      const updatedMessages = await api.fetchMessages(selectedChat.jid);
+      setMessages(updatedMessages);
+    } catch (err: any) {
+      console.error('[APP] Error syncing chat messages:', err);
+      alert('No se encontraron más mensajes previos para este chat.');
+    } finally {
+      setIsSyncingHistory(false);
+    }
+  };
+
+  // Sync Contacts from WhatsApp Address Book
   const handleSyncContacts = async () => {
     setIsSyncing(true);
     try {
@@ -178,7 +201,7 @@ export const App: React.FC = () => {
       setContacts(updatedContacts);
       const updatedChats = await api.fetchChats();
       setChats(updatedChats);
-      alert(`¡Sincronización completada! Se han actualizado ${res.count} contactos registrados de WhatsApp.`);
+      alert(`¡Sincronización completada! Se han actualizado ${res.count} contactos registrados.`);
     } catch (err: any) {
       alert(`Error al sincronizar contactos: ${err.message}`);
     } finally {
@@ -194,7 +217,7 @@ export const App: React.FC = () => {
     } else {
       const newChat: Chat = {
         jid: contact.jid,
-        name: contact.name || contact.push_name || contact.number,
+        name: contact.number,
         number: contact.number,
         is_group: contact.jid.includes('@g.us'),
         unread_count: 0,
@@ -244,21 +267,44 @@ export const App: React.FC = () => {
     handleSendMessage(content);
   };
 
+  const totalUnreadCount = chats.reduce((acc, c) => acc + (c.unread_count || 0), 0);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#111b21] text-[#e9edef]">
-      {/* Sidebar with Chats List */}
-      <Sidebar
-        chats={chats}
-        selectedChatJid={selectedChat?.jid || null}
-        onSelectChat={handleSelectChat}
-        onOpenNewChat={() => setIsNewChatOpen(true)}
+      {/* 1. Leftmost Navigation Rail */}
+      <NavigationRail
+        activeTab={activeNavTab}
+        onSelectTab={setActiveNavTab}
         onOpenQuickNotes={() => setIsQuickNotesOpen(true)}
         onSyncContacts={handleSyncContacts}
         isSyncing={isSyncing}
+        totalUnreadCount={totalUnreadCount}
         connectionState={connectionState}
       />
 
-      {/* Main Chat Area */}
+      {/* 2. Secondary Column: Either Chats List or Contacts Directory */}
+      {activeNavTab === 'chats' ? (
+        <Sidebar
+          chats={chats}
+          selectedChatJid={selectedChat?.jid || null}
+          onSelectChat={handleSelectChat}
+          onOpenNewChat={() => setIsNewChatOpen(true)}
+          onOpenQuickNotes={() => setIsQuickNotesOpen(true)}
+          onSyncContacts={handleSyncContacts}
+          isSyncing={isSyncing}
+          connectionState={connectionState}
+        />
+      ) : (
+        <ContactsPanel
+          contacts={contacts}
+          onSelectContact={(c) => {
+            handleStartChatWithContact(c);
+            setActiveNavTab('chats');
+          }}
+        />
+      )}
+
+      {/* 3. Main Chat Area */}
       <ChatArea
         chat={selectedChat}
         messages={messages}
@@ -266,6 +312,8 @@ export const App: React.FC = () => {
         onSendMedia={handleSendMedia}
         onOpenQuickNotes={() => setIsQuickNotesOpen(true)}
         onOpenMedia={(url, type) => setMediaModalData({ url, type })}
+        onSyncChatHistory={handleSyncChatHistory}
+        isSyncingHistory={isSyncingHistory}
       />
 
       {/* Modals & Drawers */}

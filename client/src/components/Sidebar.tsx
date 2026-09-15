@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { format, isToday, isYesterday } from 'date-fns';
-import { Search, MessageSquarePlus, RefreshCw, BookOpen, Check, CheckCheck, Users } from 'lucide-react';
+import { Search, MessageSquarePlus, RefreshCw, BookOpen, Check, CheckCheck, Users, Phone } from 'lucide-react';
 import { Chat } from '../types';
+import { formatPhoneNumber, isLidAccount } from '../utils/phone';
 
 interface SidebarProps {
   chats: Chat[];
@@ -36,6 +37,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const filteredChats = chats.filter((chat) => {
+    // Filter out internal LID accounts
+    if (isLidAccount(chat.jid)) return false;
+
     // Tab filter
     if (filter === 'unread' && chat.unread_count === 0) return false;
     if (filter === 'groups' && !chat.is_group) return false;
@@ -43,10 +47,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // Search filter
     if (search.trim()) {
       const q = search.toLowerCase();
-      const matchName = chat.name?.toLowerCase().includes(q);
-      const matchNumber = chat.number?.includes(q);
+      const cleanQ = search.replace(/\D/g, '');
+      const matchNumber = cleanQ ? chat.number?.replace(/\D/g, '').includes(cleanQ) : false;
       const matchMessage = chat.last_message_text?.toLowerCase().includes(q);
-      return matchName || matchNumber || matchMessage;
+      const matchGroup = chat.is_group && chat.name?.toLowerCase().includes(q);
+      return matchNumber || matchMessage || matchGroup;
     }
     return true;
   });
@@ -210,7 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         hasUnread ? 'text-white font-medium' : 'text-[#e9edef]'
                       }`}
                     >
-                      {chat.name || chat.number}
+                      {chat.is_group ? chat.name : formatPhoneNumber(chat.number || chat.jid)}
                     </h2>
                     <span
                       className={`text-[12px] shrink-0 ml-2 ${
