@@ -50,9 +50,9 @@ export async function syncContacts(): Promise<{ count: number }> {
   const inst = encodeURIComponent(config.evolution.instanceName);
   console.log('[EVOLUTION] Starting safe contact import from WhatsApp...');
 
-  let contactsRes = await evolutionFetch(`/contact/findContact/${inst}`, { method: 'POST', body: {} });
+  let contactsRes = await evolutionFetch(`/chat/findContacts/${inst}`, { method: 'POST', body: {} });
   if (!contactsRes.ok || !contactsRes.data) {
-    contactsRes = await evolutionFetch(`/contact/findContact/${inst}`, { method: 'GET' });
+    contactsRes = await evolutionFetch(`/chat/findContacts/${inst}`, { method: 'GET' });
   }
 
   const contactsList = Array.isArray(contactsRes.data)
@@ -120,13 +120,37 @@ export async function syncRecentChats(): Promise<void> {
         const isGroup = jid.includes('@g.us');
         const pic = item.profilePictureUrl || item.profilePicUrl || null;
 
+        const lastMsg = item.lastMessage;
+        let lastMessageText = '';
+        let lastMessageTime = 0;
+        let lastMessageFromMe = false;
+        let lastMessageStatus: MessageAck = 'delivered';
+
+        if (lastMsg) {
+          lastMessageText =
+            lastMsg.message?.conversation ||
+            lastMsg.message?.extendedTextMessage?.text ||
+            lastMsg.message?.imageMessage?.caption ||
+            lastMsg.message?.videoMessage?.caption ||
+            '';
+          lastMessageTime = Number(lastMsg.messageTimestamp) || 0;
+          lastMessageFromMe = Boolean(lastMsg.key?.fromMe);
+          if (lastMsg.status === 'READ') lastMessageStatus = 'read';
+          else if (lastMsg.status === 'DELIVERY_ACK') lastMessageStatus = 'delivered';
+          else if (lastMsg.status === 'SERVER_ACK') lastMessageStatus = 'sent';
+        }
+
         await db.upsertChat({
           jid,
           name,
           number,
           is_group: isGroup,
           profile_pic_url: pic || undefined,
-          unread_count: item.unreadCount || 0
+          unread_count: item.unreadCount || 0,
+          last_message_text: lastMessageText || undefined,
+          last_message_time: lastMessageTime || undefined,
+          last_message_from_me: lastMessageFromMe,
+          last_message_status: lastMessageStatus
         });
       }
     }
