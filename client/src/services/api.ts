@@ -21,11 +21,17 @@ export async function markChatRead(chatJid: string): Promise<void> {
   await fetch(`${API_BASE}/chats/${encodeURIComponent(chatJid)}/read`, { method: 'POST' });
 }
 
-export async function sendTextMessage(to: string, text: string, quotedId?: string): Promise<Message> {
+export async function sendTextMessage(
+  to: string,
+  text: string,
+  quotedId?: string,
+  quotedBody?: string,
+  quotedSender?: string
+): Promise<Message> {
   const res = await fetch(`${API_BASE}/messages/send-text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to, text, quotedId })
+    body: JSON.stringify({ to, text, quotedId, quotedBody, quotedSender })
   });
   if (!res.ok) throw new Error('Failed to send text message');
   return res.json();

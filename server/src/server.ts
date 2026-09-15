@@ -176,11 +176,11 @@ app.post('/api/chats/:jid/messages/:id/pin', async (req, res) => {
 // Outbound Messaging
 app.post('/api/messages/send-text', async (req, res) => {
   try {
-    const { to, text, quotedId } = req.body;
+    const { to, text, quotedId, quotedBody, quotedSender } = req.body;
     if (!to || !text) {
       return res.status(400).json({ error: 'Missing to or text' });
     }
-    const message = await evolution.sendTextMessage(to, text, quotedId);
+    const message = await evolution.sendTextMessage(to, text, quotedId, quotedBody, quotedSender);
     res.json(message);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

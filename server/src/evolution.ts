@@ -168,7 +168,13 @@ export async function syncRecentChats(): Promise<void> {
   }
 }
 
-export async function sendTextMessage(to: string, text: string, quotedId?: string): Promise<Message> {
+export async function sendTextMessage(
+  to: string,
+  text: string,
+  quotedId?: string,
+  quotedBody?: string,
+  quotedSender?: string
+): Promise<Message> {
   const inst = encodeURIComponent(config.evolution.instanceName);
   let destination = to;
   if (!to.includes('@g.us') && !to.includes('@lid')) {
@@ -184,10 +190,20 @@ export async function sendTextMessage(to: string, text: string, quotedId?: strin
     }
   };
 
+  let resolvedQuotedBody = quotedBody;
+  let resolvedQuotedSender = quotedSender;
+
   if (quotedId) {
     try {
       const qRes = await db.pool.query('SELECT * FROM wsp_messages WHERE id = $1', [quotedId]);
       const quotedMsg = qRes.rows[0];
+      if (quotedMsg) {
+        if (!resolvedQuotedBody) resolvedQuotedBody = quotedMsg.body;
+        if (!resolvedQuotedSender) {
+          resolvedQuotedSender = quotedMsg.from_me ? 'Tú' : (quotedMsg.sender_name || quotedMsg.chat_jid?.split('@')[0]);
+        }
+      }
+
       const quoteObj = {
         key: {
           remoteJid: quotedMsg?.chat_jid || (to.includes('@') ? to : `${destination}@s.whatsapp.net`),
@@ -195,7 +211,7 @@ export async function sendTextMessage(to: string, text: string, quotedId?: strin
           id: quotedId
         },
         message: {
-          conversation: quotedMsg?.body || ''
+          conversation: resolvedQuotedBody || ''
         }
       };
       payload.quoted = quoteObj;
@@ -223,6 +239,8 @@ export async function sendTextMessage(to: string, text: string, quotedId?: strin
     type: 'chat',
     status: res.ok ? 'sent' : 'pending',
     quoted_id: quotedId,
+    quoted_body: resolvedQuotedBody,
+    quoted_sender: resolvedQuotedSender,
     timestamp
   };
 
@@ -350,6 +368,12 @@ export async function syncChatMessages(chatJid: string): Promise<Message[]> {
       msgObj.audioMessage?.contextInfo ||
       msgObj.documentMessage?.contextInfo;
     const quotedId = contextInfo?.stanzaId;
+    const quotedBody =
+      contextInfo?.quotedMessage?.conversation ||
+      contextInfo?.quotedMessage?.extendedTextMessage?.text ||
+      contextInfo?.quotedMessage?.imageMessage?.caption ||
+      (contextInfo?.quotedMessage ? '[Archivo]' : undefined);
+    const quotedSender = contextInfo?.participant ? contextInfo.participant.split('@')[0] : (fromMe ? 'Tú' : undefined);
 
     let type: Message['type'] = 'chat';
     let mediaMimetype: string | undefined;
@@ -386,9 +410,11 @@ export async function syncChatMessages(chatJid: string): Promise<Message[]> {
     const timestamp = Number(item.messageTimestamp) || Math.floor(Date.now() / 1000);
     let status: MessageAck = fromMe ? 'sent' : 'delivered';
     const rawStatus = item.status;
-    if (rawStatus === 3 || rawStatus === 'READ' || rawStatus === 'PLAYED') status = 'read';
-    else if (rawStatus === 2 || rawStatus === 'DELIVERY_ACK' || rawStatus === 'DELIVERED') status = 'delivered';
-    else if (rawStatus === 1 || rawStatus === 'SERVER_ACK' || rawStatus === 'SENT') status = 'sent';
+    const numStatus = Number(rawStatus);
+    const strStatus = String(rawStatus).toUpperCase();
+    if (numStatus === 4 || numStatus === 5 || strStatus === 'READ' || strStatus === 'PLAYED') status = 'read';
+    else if (numStatus === 3 || strStatus === 'DELIVERY_ACK' || strStatus === 'DELIVERED') status = 'delivered';
+    else if (numStatus === 2 || strStatus === 'SERVER_ACK' || strStatus === 'SENT') status = 'sent';
 
     const message: Message = {
       id: msgId,
@@ -402,6 +428,8 @@ export async function syncChatMessages(chatJid: string): Promise<Message[]> {
       media_mimetype: mediaMimetype,
       media_filename: mediaFilename,
       quoted_id: quotedId,
+      quoted_body: quotedBody,
+      quoted_sender: quotedSender,
       status,
       timestamp
     };

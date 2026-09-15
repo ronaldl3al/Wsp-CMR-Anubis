@@ -238,13 +238,20 @@ export async function addMessage(msg: Message): Promise<{ message: Message; chat
     INSERT INTO wsp_messages (
       id, chat_jid, sender_jid, sender_name, from_me,
       body, type, media_url, media_mimetype, media_filename,
-      status, quoted_id, timestamp, created_at
+      status, quoted_id, quoted_body, quoted_sender, timestamp, created_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
     ON CONFLICT (id) DO UPDATE SET
-      status = EXCLUDED.status,
+      status = CASE 
+        WHEN wsp_messages.status = 'read' THEN 'read'
+        WHEN wsp_messages.status = 'delivered' AND EXCLUDED.status = 'sent' THEN 'delivered'
+        ELSE EXCLUDED.status 
+      END,
       body = COALESCE(EXCLUDED.body, wsp_messages.body),
-      media_url = COALESCE(EXCLUDED.media_url, wsp_messages.media_url)
+      media_url = COALESCE(EXCLUDED.media_url, wsp_messages.media_url),
+      quoted_id = COALESCE(EXCLUDED.quoted_id, wsp_messages.quoted_id),
+      quoted_body = COALESCE(EXCLUDED.quoted_body, wsp_messages.quoted_body),
+      quoted_sender = COALESCE(EXCLUDED.quoted_sender, wsp_messages.quoted_sender)
     RETURNING *;
   `;
 
@@ -261,6 +268,8 @@ export async function addMessage(msg: Message): Promise<{ message: Message; chat
     msg.media_filename || null,
     msg.status || 'sent',
     msg.quoted_id || null,
+    msg.quoted_body || null,
+    msg.quoted_sender || null,
     msg.timestamp || Math.floor(Date.now() / 1000)
   ];
 

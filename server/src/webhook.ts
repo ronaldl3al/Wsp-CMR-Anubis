@@ -117,6 +117,12 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
           msgObj.audioMessage?.contextInfo ||
           msgObj.documentMessage?.contextInfo;
         const quotedId = contextInfo?.stanzaId;
+        const quotedBody =
+          contextInfo?.quotedMessage?.conversation ||
+          contextInfo?.quotedMessage?.extendedTextMessage?.text ||
+          contextInfo?.quotedMessage?.imageMessage?.caption ||
+          (contextInfo?.quotedMessage ? '[Archivo]' : undefined);
+        const quotedSender = contextInfo?.participant ? contextInfo.participant.split('@')[0] : (fromMe ? 'Tú' : undefined);
 
         const message: Message = {
           id: msgId,
@@ -130,6 +136,8 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
           media_mimetype: mediaMimetype,
           media_filename: mediaFilename,
           quoted_id: quotedId,
+          quoted_body: quotedBody,
+          quoted_sender: quotedSender,
           status,
           timestamp
         };
@@ -141,7 +149,7 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
     }
 
     // 2. Message ACK Status Update (Delivered / Read)
-    else if (event === 'MESSAGES_UPDATE') {
+    else if (event === 'MESSAGES_UPDATE' || event === 'MESSAGE_UPDATE') {
       let updates: any[] = [];
       if (Array.isArray(data)) {
         updates = data;
@@ -160,15 +168,30 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
         if (!msgId || rawStatus === undefined) continue;
 
         let ack: MessageAck = 'sent';
+        const numStatus = Number(rawStatus);
         const strStatus = String(rawStatus).toUpperCase();
-        if (rawStatus === 3 || rawStatus === 4 || strStatus === 'READ' || strStatus === 'PLAYED') ack = 'read';
-        else if (rawStatus === 2 || strStatus === 'DELIVERED' || strStatus === 'DELIVERY_ACK') ack = 'delivered';
-        else if (rawStatus === 1 || strStatus === 'SENT' || strStatus === 'SERVER_ACK') ack = 'sent';
 
-        console.log(`[WEBHOOK] Updating status for message ${msgId} -> ${ack}`);
+        if (numStatus === 4 || numStatus === 5 || strStatus === 'READ' || strStatus === 'PLAYED') {
+          ack = 'read';
+        } else if (numStatus === 3 || strStatus === 'DELIVERED' || strStatus === 'DELIVERY_ACK' || strStatus === 'RECEIVED') {
+          ack = 'delivered';
+        } else if (numStatus === 2 || strStatus === 'SENT' || strStatus === 'SERVER_ACK') {
+          ack = 'sent';
+        } else if (numStatus === 1 || strStatus === 'PENDING') {
+          ack = 'pending';
+        }
+
+        console.log(`[WEBHOOK] Updating status for message ${msgId} -> ${ack} (raw: ${rawStatus})`);
+
+        // Always broadcast in real time to all active browser clients immediately
+        socket.broadcastMessageUpdate(msgId, ack, key.remoteJid);
+
+        // Update database with retry in case message insertion is resolving in parallel
         const updated = await db.updateMessageStatus(msgId, ack);
-        if (updated) {
-          socket.broadcastMessageUpdate(msgId, ack, key.remoteJid);
+        if (!updated) {
+          setTimeout(() => {
+            db.updateMessageStatus(msgId, ack).catch(() => {});
+          }, 600);
         }
       }
     }

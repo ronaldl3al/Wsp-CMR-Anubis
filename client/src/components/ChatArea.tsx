@@ -12,13 +12,6 @@ import {
   History,
   X,
   Check,
-  Bold,
-  Italic,
-  Strikethrough,
-  Code,
-  Quote,
-  List,
-  ListOrdered,
   Copy,
   Reply,
   ArrowLeft,
@@ -32,10 +25,16 @@ import { PinnedMessageBanner } from './PinnedMessageBanner';
 import { formatPhoneNumber } from '../utils/phone';
 import { getWhatsAppDateLabel, isSameDay } from '../utils/dateUtils';
 
+export interface ReplyInfo {
+  id: string;
+  body?: string;
+  sender?: string;
+}
+
 interface ChatAreaProps {
   chat: Chat | null;
   messages: Message[];
-  onSendMessage: (text: string, quotedId?: string) => void;
+  onSendMessage: (text: string, replyInfo?: ReplyInfo) => void;
   onSendMedia: (file: File, caption?: string) => void;
   onOpenQuickNotes: () => void;
   onOpenMedia: (url: string, type: 'image' | 'video') => void;
@@ -120,7 +119,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     if (!inputText.trim() || isSending) return;
 
     const textToSend = inputText;
-    const qId = replyingTo?.id;
+    const replyData: ReplyInfo | undefined = replyingTo
+      ? {
+          id: replyingTo.id,
+          body: replyingTo.body || (replyingTo.type !== 'chat' ? `[${replyingTo.type}]` : ''),
+          sender: replyingTo.from_me ? 'Tú' : (replyingTo.sender_name || formatPhoneNumber(replyingTo.chat_jid))
+        }
+      : undefined;
+
     setIsSending(true);
 
     try {
@@ -131,7 +137,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       } else {
         setInputText('');
         setReplyingTo(null);
-        await onSendMessage(textToSend, qId);
+        await onSendMessage(textToSend, replyData);
       }
     } finally {
       setIsSending(false);
@@ -160,68 +166,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       onSendMedia(file);
       e.target.value = '';
     }
-  };
-
-  // WhatsApp Formatting Shortcuts helper
-  const applyFormat = (type: 'bold' | 'italic' | 'strike' | 'mono' | 'quote' | 'bullet' | 'number') => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = inputText.substring(start, end);
-
-    let before = '';
-    let after = '';
-    let defaultPlaceholder = '';
-
-    switch (type) {
-      case 'bold':
-        before = '*';
-        after = '*';
-        defaultPlaceholder = 'texto';
-        break;
-      case 'italic':
-        before = '_';
-        after = '_';
-        defaultPlaceholder = 'texto';
-        break;
-      case 'strike':
-        before = '~';
-        after = '~';
-        defaultPlaceholder = 'texto';
-        break;
-      case 'mono':
-        before = '```';
-        after = '```';
-        defaultPlaceholder = 'código';
-        break;
-      case 'quote':
-        before = '> ';
-        after = '';
-        defaultPlaceholder = 'cita';
-        break;
-      case 'bullet':
-        before = '* ';
-        after = '';
-        defaultPlaceholder = 'elemento';
-        break;
-      case 'number':
-        before = '1. ';
-        after = '';
-        defaultPlaceholder = 'elemento';
-        break;
-    }
-
-    const replacement = selected ? `${before}${selected}${after}` : `${before}${defaultPlaceholder}${after}`;
-    const newText = inputText.substring(0, start) + replacement + inputText.substring(end);
-    setInputText(newText);
-
-    setTimeout(() => {
-      textarea.focus();
-      const newCursorPos = selected ? start + replacement.length : start + before.length + defaultPlaceholder.length;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 10);
   };
 
   // Context Menu Actions
@@ -464,7 +408,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             return (
               <React.Fragment key={message.id}>
                 {showDateHeader && dateLabel && (
-                  <div className="flex justify-center my-3 sticky top-2 z-10 pointer-events-none select-none">
+                  <div className="flex justify-center my-3 select-none">
                     <span className="bg-[#182229]/90 backdrop-blur-sm text-[#8696a0] text-[11.5px] font-semibold px-3 py-1 rounded-lg shadow-sm border border-white/5 uppercase tracking-wide">
                       {dateLabel}
                     </span>
@@ -475,6 +419,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   quotedMessage={quotedMessage}
                   onOpenMedia={onOpenMedia}
                   onScrollToMessage={scrollToMessage}
+                  onReply={handleReplyMessage}
                   onContextMenu={(e, msg) => {
                     setContextMenu({
                       x: e.clientX,
@@ -536,76 +481,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </button>
         </div>
       )}
-
-      {/* Formatting Shortcuts Toolbar */}
-      <div className="bg-[#202c33] border-t border-[#2a3942]/60 px-3 sm:px-4 py-1 flex items-center gap-1 text-[#8696a0] text-xs z-10 select-none overflow-x-auto">
-        <span className="text-[11px] font-semibold text-[#8696a0]/70 uppercase tracking-wider mr-1 hidden sm:inline">
-          Formato:
-        </span>
-        <button
-          type="button"
-          onClick={() => applyFormat('bold')}
-          className="p-1.5 hover:bg-[#2a3942] hover:text-[#e9edef] rounded font-bold transition flex items-center gap-0.5"
-          title="Negrita (*texto*)"
-        >
-          <Bold size={14} />
-          <span className="text-[11px]">B</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => applyFormat('italic')}
-          className="p-1.5 hover:bg-[#2a3942] hover:text-[#e9edef] rounded italic transition flex items-center gap-0.5"
-          title="Cursiva (_texto_)"
-        >
-          <Italic size={14} />
-          <span className="text-[11px]">I</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => applyFormat('strike')}
-          className="p-1.5 hover:bg-[#2a3942] hover:text-[#e9edef] rounded line-through transition flex items-center gap-0.5"
-          title="Tachado (~texto~)"
-        >
-          <Strikethrough size={14} />
-          <span className="text-[11px]">S</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => applyFormat('mono')}
-          className="p-1.5 hover:bg-[#2a3942] hover:text-[#e9edef] rounded font-mono transition flex items-center gap-0.5"
-          title="Monoespaciado (```texto```)"
-        >
-          <Code size={14} />
-          <span className="text-[11px]">&lt;&gt;</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => applyFormat('quote')}
-          className="p-1.5 hover:bg-[#2a3942] hover:text-[#e9edef] rounded transition flex items-center gap-0.5"
-          title="Cita (> texto)"
-        >
-          <Quote size={14} />
-          <span className="text-[11px]">&gt;</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => applyFormat('bullet')}
-          className="p-1.5 hover:bg-[#2a3942] hover:text-[#e9edef] rounded transition flex items-center gap-0.5"
-          title="Lista con viñetas (* texto)"
-        >
-          <List size={14} />
-          <span className="text-[11px]">•</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => applyFormat('number')}
-          className="p-1.5 hover:bg-[#2a3942] hover:text-[#e9edef] rounded transition flex items-center gap-0.5"
-          title="Lista numerada (1. texto)"
-        >
-          <ListOrdered size={14} />
-          <span className="text-[11px]">1.</span>
-        </button>
-      </div>
 
       {/* Message Input Footer */}
       <div className="min-h-[62px] bg-[#202c33] px-3 sm:px-4 py-2 flex items-end gap-2 shrink-0 z-10">

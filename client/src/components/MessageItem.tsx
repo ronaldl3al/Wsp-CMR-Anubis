@@ -1,6 +1,6 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { Check, CheckCheck, Clock, FileText, Download, Image as ImageIcon, Pin } from 'lucide-react';
+import { Check, CheckCheck, Clock, FileText, Download, Image as ImageIcon, Pin, Reply } from 'lucide-react';
 import { Message } from '../types';
 import { AudioPlayer } from './AudioPlayer';
 import { WhatsAppText } from './WhatsAppText';
@@ -12,6 +12,7 @@ interface MessageItemProps {
   onOpenMedia: (url: string, type: 'image' | 'video') => void;
   onContextMenu?: (e: React.MouseEvent, message: Message) => void;
   onScrollToMessage?: (id: string) => void;
+  onReply?: (message: Message) => void;
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({
@@ -19,7 +20,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   quotedMessage,
   onOpenMedia,
   onContextMenu,
-  onScrollToMessage
+  onScrollToMessage,
+  onReply
 }) => {
   const isMe = message.from_me;
   const isDeleted = message.is_deleted || message.body === '🚫 Este mensaje fue eliminado';
@@ -143,18 +145,25 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     }
   };
 
+  const quotedText = quotedMessage?.body || message.quoted_body;
+  const quotedAuthor = quotedMessage
+    ? (quotedMessage.from_me ? 'Tú' : (quotedMessage.sender_name || formatPhoneNumber(quotedMessage.chat_jid)))
+    : (message.quoted_sender || 'Mensaje citado');
+  const hasQuote = Boolean(message.quoted_id || quotedMessage || message.quoted_body);
+
   return (
     <div
       id={`msg-${message.id}`}
       className={`flex w-full my-1 ${isMe ? 'justify-end' : 'justify-start'}`}
     >
       <div
+        onDoubleClick={() => onReply?.(message)}
         onContextMenu={(e) => {
           e.preventDefault();
           onContextMenu?.(e, message);
         }}
         style={isMe && !isDeleted ? { backgroundColor: 'var(--color-bubble-me, #005c4b)' } : {}}
-        className={`relative max-w-[85%] sm:max-w-[70%] md:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm text-sm cursor-pointer select-text ${
+        className={`group relative max-w-[85%] sm:max-w-[70%] md:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm text-sm cursor-pointer select-text ${
           isDeleted
             ? 'bg-[#202c33]/70 border border-white/5'
             : isMe
@@ -162,6 +171,21 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             : 'bg-[#202c33] text-[#e9edef] rounded-tl-none'
         }`}
       >
+        {/* Quick Reply Button on Hover */}
+        {!isDeleted && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReply?.(message);
+            }}
+            className="absolute top-1 right-1 p-1 bg-[#182229]/80 hover:bg-[#182229] text-[#8696a0] hover:text-[#00a884] rounded-full shadow opacity-0 group-hover:opacity-100 transition duration-150 z-10"
+            title="Responder mensaje"
+          >
+            <Reply size={13} />
+          </button>
+        )}
+
         {/* Sender name for group chats */}
         {!isMe && message.sender_name && (
           <p className="text-[12px] font-semibold text-[#53bdeb] mb-0.5">
@@ -170,21 +194,21 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         )}
 
         {/* Quoted Message Preview Banner */}
-        {quotedMessage && (
+        {hasQuote && (quotedText || quotedAuthor) && (
           <div
             onClick={(e) => {
               e.stopPropagation();
-              onScrollToMessage?.(quotedMessage.id);
+              if (message.quoted_id) {
+                onScrollToMessage?.(message.quoted_id);
+              }
             }}
             className="bg-black/25 border-l-4 border-[#00a884] rounded px-2.5 py-1.5 mb-1.5 cursor-pointer hover:bg-black/35 transition text-xs select-none"
           >
             <p className="font-semibold text-[#00a884] text-[11.5px] truncate">
-              {quotedMessage.from_me
-                ? 'Tú'
-                : quotedMessage.sender_name || formatPhoneNumber(quotedMessage.chat_jid)}
+              {quotedAuthor}
             </p>
             <p className="text-[#8696a0] truncate text-[12px]">
-              {quotedMessage.body || (quotedMessage.type !== 'chat' ? `[${quotedMessage.type}]` : '')}
+              {quotedText || (quotedMessage?.type && quotedMessage.type !== 'chat' ? `[${quotedMessage.type}]` : '')}
             </p>
           </div>
         )}

@@ -42,6 +42,8 @@ export interface Message {
   media_filename?: string;
   status: MessageAck;
   quoted_id?: string;
+  quoted_body?: string;
+  quoted_sender?: string;
   timestamp: number;
   is_pinned?: boolean;
   is_edited?: boolean;

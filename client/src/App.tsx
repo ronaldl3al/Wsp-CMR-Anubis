@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NavigationRail, NavTab } from './components/NavigationRail';
 import { Sidebar } from './components/Sidebar';
 import { ContactsPanel } from './components/ContactsPanel';
@@ -19,6 +19,9 @@ export const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([]);
+
+  // Track latest message ACKs to eliminate race condition between send response & webhook
+  const pendingAcksRef = useRef<Map<string, MessageAck>>(new Map());
 
   // Navigation tab: 'chats' or 'contacts'
   const [activeNavTab, setActiveNavTab] = useState<NavTab>('chats');
@@ -76,6 +79,13 @@ export const App: React.FC = () => {
         if (selectedChat && message.chat_jid === selectedChat.jid) {
           setMessages((prev) => {
             if (prev.some((m) => m.id === message.id)) return prev;
+            // If message is from me and matches an optimistic temp message, replace it
+            if (message.from_me) {
+              const tempMatch = prev.find((m) => m.id.startsWith('temp_') && m.body === message.body);
+              if (tempMatch) {
+                return prev.map((m) => (m.id === tempMatch.id ? message : m));
+              }
+            }
             return [...prev, message];
           });
           // Automatically mark read if we are looking at this chat
@@ -92,6 +102,10 @@ export const App: React.FC = () => {
 
       // On message ack (status checkmarks)
       ({ messageId, status, chatJid }) => {
+        // Record in pendingAcksRef
+        pendingAcksRef.current.set(messageId, status);
+
+        // Update message state in real time
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, status } : m))
         );
@@ -165,7 +179,10 @@ export const App: React.FC = () => {
   };
 
   // Send Text Message
-  const handleSendMessage = async (text: string, quotedId?: string) => {
+  const handleSendMessage = async (
+    text: string,
+    replyInfo?: { id: string; body?: string; sender?: string }
+  ) => {
     if (!selectedChat) return;
 
     // Optimistic message
@@ -177,18 +194,41 @@ export const App: React.FC = () => {
       body: text,
       type: 'chat',
       status: 'pending',
-      quoted_id: quotedId,
+      quoted_id: replyInfo?.id,
+      quoted_body: replyInfo?.body,
+      quoted_sender: replyInfo?.sender,
       timestamp: Math.floor(Date.now() / 1000)
     };
 
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
-      const sentMsg = await api.sendTextMessage(selectedChat.jid, text, quotedId);
-      // Replace optimistic message
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? sentMsg : m))
+      const sentMsg = await api.sendTextMessage(
+        selectedChat.jid,
+        text,
+        replyInfo?.id,
+        replyInfo?.body,
+        replyInfo?.sender
       );
+
+      // Check if any real-time ACK already arrived for this message
+      const latestAck = pendingAcksRef.current.get(sentMsg.id);
+      const finalMsg: Message = {
+        ...sentMsg,
+        quoted_body: replyInfo?.body || sentMsg.quoted_body,
+        quoted_sender: replyInfo?.sender || sentMsg.quoted_sender,
+        status: latestAck || sentMsg.status || 'sent'
+      };
+
+      // Replace optimistic message and ensure no duplicate if socket pushed it first
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === finalMsg.id)) {
+          return prev
+            .map((m) => (m.id === finalMsg.id ? { ...m, ...finalMsg } : m))
+            .filter((m) => m.id !== tempId);
+        }
+        return prev.map((m) => (m.id === tempId ? finalMsg : m));
+      });
     } catch (err) {
       console.error('[APP] Error sending text message:', err);
       setMessages((prev) =>
