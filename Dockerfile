@@ -1,25 +1,32 @@
-# ==============================================================================
-# Dockerfile de Producción para Chatwoot en Railway
-# ==============================================================================
-# Basado en la imagen oficial probada y precompilada v4.9.2 de Chatwoot
-FROM chatwoot/chatwoot:v4.9.2
+# Stage 1: Build Frontend (React + Vite)
+FROM node:20-alpine AS client-builder
+WORKDIR /app/client
 
-USER root
+COPY client/package*.json ./
+RUN npm install
 
-# Copiar script de entrada personalizado para Railway
-COPY docker/entrypoints/railway-entrypoint.sh /app/docker/entrypoints/railway-entrypoint.sh
-RUN chmod +x /app/docker/entrypoints/railway-entrypoint.sh
+COPY client ./
+RUN npm run build
 
-# Variables de entorno por defecto para producción
-ENV RAILS_ENV=production \
-    NODE_ENV=production \
-    INSTALLATION_ENV=docker \
-    RAILS_SERVE_STATIC_FILES=true \
-    RAILS_LOG_TO_STDOUT=true
+# Stage 2: Build and Run Backend (Node.js + Express)
+FROM node:20-alpine
+WORKDIR /app
 
-# Puerto expuesto por defecto (Railway inyecta $PORT en ejecución)
+# Install server dependencies
+COPY server/package*.json ./server/
+RUN cd server && npm install
+
+# Copy server source and compile TypeScript
+COPY server ./server
+RUN cd server && npm run build
+
+# Copy compiled frontend from client-builder
+COPY --from=client-builder /app/client/dist /app/client/dist
+
+# Expose port (dynamic on Railway)
+ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE 3000
 
-# Punto de entrada y comando por defecto
-ENTRYPOINT ["/app/docker/entrypoints/railway-entrypoint.sh"]
-CMD ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+# Start unified server
+CMD ["node", "server/dist/server.js"]
