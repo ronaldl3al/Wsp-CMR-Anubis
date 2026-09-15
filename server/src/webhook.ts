@@ -110,6 +110,14 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
         const timestamp = Number(item.messageTimestamp) || Math.floor(Date.now() / 1000);
         const status: MessageAck = fromMe ? 'sent' : 'delivered';
 
+        const contextInfo =
+          msgObj.extendedTextMessage?.contextInfo ||
+          msgObj.imageMessage?.contextInfo ||
+          msgObj.videoMessage?.contextInfo ||
+          msgObj.audioMessage?.contextInfo ||
+          msgObj.documentMessage?.contextInfo;
+        const quotedId = contextInfo?.stanzaId;
+
         const message: Message = {
           id: msgId,
           chat_jid: remoteJid,
@@ -121,6 +129,7 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
           media_url: mediaUrl,
           media_mimetype: mediaMimetype,
           media_filename: mediaFilename,
+          quoted_id: quotedId,
           status,
           timestamp
         };

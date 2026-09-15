@@ -12,6 +12,7 @@ interface NavigationRailProps {
   isSyncing: boolean;
   totalUnreadCount: number;
   connectionState: 'open' | 'connecting' | 'close';
+  className?: string;
 }
 
 export const NavigationRail: React.FC<NavigationRailProps> = ({
@@ -22,10 +23,11 @@ export const NavigationRail: React.FC<NavigationRailProps> = ({
   onOpenThemeModal,
   isSyncing,
   totalUnreadCount,
-  connectionState
+  connectionState,
+  className
 }) => {
   return (
-    <div className="w-[60px] h-full bg-[#202c33] flex flex-col items-center justify-between py-3 border-r border-[#2a3942]/60 shrink-0 select-none z-20">
+    <div className={`w-[60px] h-full bg-[#202c33] flex flex-col items-center justify-between py-3 border-r border-[#2a3942]/60 shrink-0 select-none z-20 ${className || ''}`}>
       {/* Top Section */}
       <div className="flex flex-col items-center gap-4 w-full">
         {/* App Logo */}

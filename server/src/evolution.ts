@@ -6,6 +6,15 @@ function normalizePhoneNumber(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+export function unwrapMessage(msg: any): any {
+  if (!msg) return {};
+  if (msg.ephemeralMessage?.message) return unwrapMessage(msg.ephemeralMessage.message);
+  if (msg.viewOnceMessage?.message) return unwrapMessage(msg.viewOnceMessage.message);
+  if (msg.viewOnceMessageV2?.message) return unwrapMessage(msg.viewOnceMessageV2.message);
+  if (msg.documentWithCaptionMessage?.message) return unwrapMessage(msg.documentWithCaptionMessage.message);
+  return msg;
+}
+
 export async function evolutionFetch(endpoint: string, options: { method?: string; body?: any } = {}) {
   const url = `${config.evolution.apiUrl}${endpoint}`;
   const headers: Record<string, string> = {
@@ -176,9 +185,24 @@ export async function sendTextMessage(to: string, text: string, quotedId?: strin
   };
 
   if (quotedId) {
-    payload.quoted = {
-      key: { id: quotedId }
-    };
+    try {
+      const qRes = await db.pool.query('SELECT * FROM wsp_messages WHERE id = $1', [quotedId]);
+      const quotedMsg = qRes.rows[0];
+      const quoteObj = {
+        key: {
+          remoteJid: quotedMsg?.chat_jid || (to.includes('@') ? to : `${destination}@s.whatsapp.net`),
+          fromMe: quotedMsg ? quotedMsg.from_me : false,
+          id: quotedId
+        },
+        message: {
+          conversation: quotedMsg?.body || ''
+        }
+      };
+      payload.quoted = quoteObj;
+      payload.options.quoted = quoteObj;
+    } catch (e: any) {
+      console.error('[EVOLUTION] Error preparing quoted message:', e.message);
+    }
   }
 
   const res = await evolutionFetch(`/message/sendText/${inst}`, {
@@ -309,7 +333,8 @@ export async function syncChatMessages(chatJid: string): Promise<Message[]> {
     if (!msgId) continue;
 
     const fromMe = Boolean(item.key.fromMe);
-    const msgObj = item.message || {};
+    const rawMsg = item.message || {};
+    const msgObj = unwrapMessage(rawMsg);
     const text =
       msgObj.conversation ||
       msgObj.extendedTextMessage?.text ||
@@ -317,6 +342,14 @@ export async function syncChatMessages(chatJid: string): Promise<Message[]> {
       msgObj.videoMessage?.caption ||
       msgObj.documentMessage?.caption ||
       '';
+
+    const contextInfo =
+      msgObj.extendedTextMessage?.contextInfo ||
+      msgObj.imageMessage?.contextInfo ||
+      msgObj.videoMessage?.contextInfo ||
+      msgObj.audioMessage?.contextInfo ||
+      msgObj.documentMessage?.contextInfo;
+    const quotedId = contextInfo?.stanzaId;
 
     let type: Message['type'] = 'chat';
     let mediaMimetype: string | undefined;
@@ -368,6 +401,7 @@ export async function syncChatMessages(chatJid: string): Promise<Message[]> {
       media_url: mediaUrl,
       media_mimetype: mediaMimetype,
       media_filename: mediaFilename,
+      quoted_id: quotedId,
       status,
       timestamp
     };
@@ -384,12 +418,24 @@ export async function markChatRead(chatJid: string): Promise<void> {
   await db.markChatAsRead(chatJid);
 
   try {
+    const unreadRes = await db.pool.query(
+      "SELECT id, chat_jid FROM wsp_messages WHERE chat_jid = $1 AND from_me = FALSE AND status != 'read' ORDER BY timestamp DESC LIMIT 30",
+      [chatJid]
+    );
+
+    const readMessages = unreadRes.rows.length > 0
+      ? unreadRes.rows.map((r: any) => ({ remoteJid: r.chat_jid, fromMe: false, id: r.id }))
+      : [{ remoteJid: chatJid, fromMe: false }];
+
     await evolutionFetch(`/chat/markMessageAsRead/${inst}`, {
       method: 'POST',
-      body: {
-        readMessages: [{ remoteJid: chatJid }]
-      }
+      body: { readMessages }
     });
+
+    if (unreadRes.rows.length > 0) {
+      const ids = unreadRes.rows.map((r: any) => r.id);
+      await db.pool.query("UPDATE wsp_messages SET status = 'read' WHERE id = ANY($1)", [ids]);
+    }
   } catch (err: any) {
     console.error(`[EVOLUTION] Error marking chat ${chatJid} read in Evolution:`, err.message);
   }

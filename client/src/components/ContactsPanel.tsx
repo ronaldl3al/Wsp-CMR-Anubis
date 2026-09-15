@@ -6,9 +6,10 @@ import { formatPhoneNumber, isLidAccount } from '../utils/phone';
 interface ContactsPanelProps {
   contacts: Contact[];
   onSelectContact: (contact: Contact) => void;
+  className?: string;
 }
 
-export const ContactsPanel: React.FC<ContactsPanelProps> = ({ contacts, onSelectContact }) => {
+export const ContactsPanel: React.FC<ContactsPanelProps> = ({ contacts, onSelectContact, className }) => {
   const [filter, setFilter] = useState<'saved' | 'unsaved'>('saved');
   const [search, setSearch] = useState('');
 
@@ -34,7 +35,7 @@ export const ContactsPanel: React.FC<ContactsPanelProps> = ({ contacts, onSelect
   const unsavedCount = contacts.filter((c) => !c.is_saved && !isLidAccount(c.jid)).length;
 
   return (
-    <div className="w-full md:w-[380px] lg:w-[420px] h-full flex flex-col bg-[#111b21] border-r border-[#202c33] shrink-0 select-none">
+    <div className={`w-full md:w-[380px] lg:w-[420px] h-full flex flex-col bg-[#111b21] border-r border-[#202c33] shrink-0 select-none ${className || ''}`}>
       {/* Header */}
       <div className="h-[60px] bg-[#202c33] px-4 flex items-center justify-between shrink-0 border-b border-[#202c33]">
         <h2 className="text-[17px] font-medium text-[#e9edef] flex items-center gap-2">

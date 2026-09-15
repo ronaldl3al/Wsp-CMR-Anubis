@@ -13,6 +13,7 @@ interface SidebarProps {
   onSyncContacts: () => void;
   isSyncing: boolean;
   connectionState: 'open' | 'connecting' | 'close';
+  className?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -23,7 +24,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenQuickNotes,
   onSyncContacts,
   isSyncing,
-  connectionState
+  connectionState,
+  className
 }) => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unread' | 'groups'>('all');
@@ -57,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   return (
-    <div className="w-full md:w-[400px] lg:w-[450px] h-full flex flex-col bg-[#111b21] border-r border-[#202c33] shrink-0">
+    <div className={`w-full md:w-[400px] lg:w-[450px] h-full flex flex-col bg-[#111b21] border-r border-[#202c33] shrink-0 ${className || ''}`}>
       {/* Top Header */}
       <div className="h-[60px] bg-[#202c33] px-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">

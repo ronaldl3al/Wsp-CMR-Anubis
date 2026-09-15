@@ -4,17 +4,22 @@ import { Check, CheckCheck, Clock, FileText, Download, Image as ImageIcon, Pin }
 import { Message } from '../types';
 import { AudioPlayer } from './AudioPlayer';
 import { WhatsAppText } from './WhatsAppText';
+import { formatPhoneNumber } from '../utils/phone';
 
 interface MessageItemProps {
   message: Message;
+  quotedMessage?: Message | null;
   onOpenMedia: (url: string, type: 'image' | 'video') => void;
   onContextMenu?: (e: React.MouseEvent, message: Message) => void;
+  onScrollToMessage?: (id: string) => void;
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({
   message,
+  quotedMessage,
   onOpenMedia,
-  onContextMenu
+  onContextMenu,
+  onScrollToMessage
 }) => {
   const isMe = message.from_me;
   const isDeleted = message.is_deleted || message.body === '🚫 Este mensaje fue eliminado';
@@ -59,7 +64,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 src={message.media_url}
                 alt="Imagen"
                 onClick={() => onOpenMedia(message.media_url!, 'image')}
-                className="max-h-72 w-full object-cover rounded cursor-pointer hover:opacity-95 transition"
+                className="max-h-64 max-w-[280px] sm:max-w-[320px] w-auto object-cover rounded-md cursor-pointer hover:opacity-95 transition"
               />
             ) : (
               <div className="flex items-center gap-2 p-3 bg-black/20 rounded text-[#8696a0] text-sm">
@@ -81,9 +86,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             {message.media_url && (
               <div
                 onClick={() => onOpenMedia(message.media_url!, 'video')}
-                className="relative cursor-pointer max-h-72 rounded overflow-hidden"
+                className="relative cursor-pointer max-h-64 max-w-[280px] sm:max-w-[320px] rounded-md overflow-hidden"
               >
-                <video src={message.media_url} className="w-full max-h-72 object-cover rounded" />
+                <video src={message.media_url} className="w-full max-h-64 object-cover rounded" />
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
                   <span className="bg-[#00a884] text-white p-3 rounded-full">▶</span>
                 </div>
@@ -149,7 +154,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           onContextMenu?.(e, message);
         }}
         style={isMe && !isDeleted ? { backgroundColor: 'var(--color-bubble-me, #005c4b)' } : {}}
-        className={`relative max-w-[78%] md:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm text-sm cursor-pointer select-text ${
+        className={`relative max-w-[85%] sm:max-w-[70%] md:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm text-sm cursor-pointer select-text ${
           isDeleted
             ? 'bg-[#202c33]/70 border border-white/5'
             : isMe
@@ -162,6 +167,26 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           <p className="text-[12px] font-semibold text-[#53bdeb] mb-0.5">
             {message.sender_name}
           </p>
+        )}
+
+        {/* Quoted Message Preview Banner */}
+        {quotedMessage && (
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onScrollToMessage?.(quotedMessage.id);
+            }}
+            className="bg-black/25 border-l-4 border-[#00a884] rounded px-2.5 py-1.5 mb-1.5 cursor-pointer hover:bg-black/35 transition text-xs select-none"
+          >
+            <p className="font-semibold text-[#00a884] text-[11.5px] truncate">
+              {quotedMessage.from_me
+                ? 'Tú'
+                : quotedMessage.sender_name || formatPhoneNumber(quotedMessage.chat_jid)}
+            </p>
+            <p className="text-[#8696a0] truncate text-[12px]">
+              {quotedMessage.body || (quotedMessage.type !== 'chat' ? `[${quotedMessage.type}]` : '')}
+            </p>
+          </div>
         )}
 
         {/* Bubble content */}

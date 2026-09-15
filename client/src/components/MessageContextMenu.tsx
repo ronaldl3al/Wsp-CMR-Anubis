@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Copy, Edit3, Trash2, Pin, PinOff } from 'lucide-react';
+import { Copy, Edit3, Trash2, Pin, PinOff, Reply } from 'lucide-react';
 import { Message } from '../types';
 
 interface MessageContextMenuProps {
@@ -8,6 +8,7 @@ interface MessageContextMenuProps {
   message: Message | null;
   isOpen: boolean;
   onClose: () => void;
+  onReply?: (msg: Message) => void;
   onCopy: (msg: Message) => void;
   onEdit: (msg: Message) => void;
   onDelete: (msg: Message) => void;
@@ -20,6 +21,7 @@ export const MessageContextMenu: React.FC<MessageContextMenuProps> = ({
   message,
   isOpen,
   onClose,
+  onReply,
   onCopy,
   onEdit,
   onDelete,
@@ -67,6 +69,18 @@ export const MessageContextMenu: React.FC<MessageContextMenuProps> = ({
       style={{ top: `${posY}px`, left: `${posX}px` }}
       className="fixed z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl py-1.5 w-[200px] text-[14px] text-[#e9edef] animate-in fade-in zoom-in-95 duration-100 select-none"
     >
+      {/* Responder */}
+      <button
+        onClick={() => {
+          if (onReply) onReply(message);
+          onClose();
+        }}
+        className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[#182229] transition text-left"
+      >
+        <Reply size={16} className="text-[#00a884]" />
+        <span>Responder</span>
+      </button>
+
       {/* Copiar */}
       <button
         onClick={() => {

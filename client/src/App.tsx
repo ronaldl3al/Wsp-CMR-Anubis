@@ -165,7 +165,7 @@ export const App: React.FC = () => {
   };
 
   // Send Text Message
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = async (text: string, quotedId?: string) => {
     if (!selectedChat) return;
 
     // Optimistic message
@@ -177,13 +177,14 @@ export const App: React.FC = () => {
       body: text,
       type: 'chat',
       status: 'pending',
+      quoted_id: quotedId,
       timestamp: Math.floor(Date.now() / 1000)
     };
 
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
-      const sentMsg = await api.sendTextMessage(selectedChat.jid, text);
+      const sentMsg = await api.sendTextMessage(selectedChat.jid, text, quotedId);
       // Replace optimistic message
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? sentMsg : m))
@@ -353,6 +354,7 @@ export const App: React.FC = () => {
         isSyncing={isSyncing}
         totalUnreadCount={totalUnreadCount}
         connectionState={connectionState}
+        className={selectedChat ? 'hidden md:flex' : 'flex'}
       />
 
       {/* 2. Secondary Column: Either Chats List or Contacts Directory */}
@@ -366,6 +368,7 @@ export const App: React.FC = () => {
           onSyncContacts={handleSyncContacts}
           isSyncing={isSyncing}
           connectionState={connectionState}
+          className={selectedChat ? 'hidden md:flex' : 'flex-1 md:w-[400px] lg:w-[450px] flex'}
         />
       ) : (
         <ContactsPanel
@@ -374,23 +377,27 @@ export const App: React.FC = () => {
             handleStartChatWithContact(c);
             setActiveNavTab('chats');
           }}
+          className={selectedChat ? 'hidden md:flex' : 'flex-1 md:w-[380px] lg:w-[420px] flex'}
         />
       )}
 
       {/* 3. Main Chat Area */}
-      <ChatArea
-        chat={selectedChat}
-        messages={messages}
-        onSendMessage={handleSendMessage}
-        onSendMedia={handleSendMedia}
-        onOpenQuickNotes={() => setIsQuickNotesOpen(true)}
-        onOpenMedia={(url, type) => setMediaModalData({ url, type })}
-        onSyncChatHistory={handleSyncChatHistory}
-        isSyncingHistory={isSyncingHistory}
-        onUpdateMessage={handleUpdateMessage}
-        onDeleteMessage={handleDeleteMessage}
-        onTogglePin={handleTogglePin}
-      />
+      <div className={`flex-1 h-full ${!selectedChat ? 'hidden md:flex' : 'flex'}`}>
+        <ChatArea
+          chat={selectedChat}
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          onSendMedia={handleSendMedia}
+          onOpenQuickNotes={() => setIsQuickNotesOpen(true)}
+          onOpenMedia={(url, type) => setMediaModalData({ url, type })}
+          onSyncChatHistory={handleSyncChatHistory}
+          isSyncingHistory={isSyncingHistory}
+          onUpdateMessage={handleUpdateMessage}
+          onDeleteMessage={handleDeleteMessage}
+          onTogglePin={handleTogglePin}
+          onBack={() => setSelectedChat(null)}
+        />
+      </div>
 
       {/* Modals & Drawers */}
       <ContactsModal
