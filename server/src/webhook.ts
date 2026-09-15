@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import * as db from './db';
 import * as socket from './socket';
+import * as evolution from './evolution';
 import { Message, MessageAck, MessageType } from './types';
 
 function unwrapMessage(msg: any): any {
@@ -94,10 +95,16 @@ export async function handleEvolutionWebhook(req: Request, res: Response) {
           mediaUrl = item.base64 || data.base64 ? `data:${mediaMimetype};base64,${item.base64 || data.base64}` : msgObj.stickerMessage.url;
         }
 
-        // Direct base64 fallback
-        if ((item.base64 || data.base64) && !mediaUrl) {
-          const b64 = item.base64 || data.base64;
-          mediaUrl = `data:${mediaMimetype || 'application/octet-stream'};base64,${b64}`;
+        // If mediaUrl is missing or points to WhatsApp encrypted MMG servers, fetch decrypted base64
+        if (type !== 'chat' && (!mediaUrl || mediaUrl.includes('mmg.whatsapp.net') || mediaUrl.includes('.enc'))) {
+          try {
+            const decrypted = await evolution.getBase64FromMedia(msgId);
+            if (decrypted?.base64) {
+              mediaUrl = `data:${decrypted.mimetype || mediaMimetype || 'image/jpeg'};base64,${decrypted.base64}`;
+            }
+          } catch (e: any) {
+            console.error('[WEBHOOK] Failed to decrypt media in webhook:', e.message);
+          }
         }
 
         const timestamp = Number(item.messageTimestamp) || Math.floor(Date.now() / 1000);

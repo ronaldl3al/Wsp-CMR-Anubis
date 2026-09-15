@@ -1,6 +1,6 @@
 import React from 'react';
 import { format } from 'date-fns';
-import { Check, CheckCheck, Clock, FileText, Download } from 'lucide-react';
+import { Check, CheckCheck, Clock, FileText, Download, Image as ImageIcon } from 'lucide-react';
 import { Message } from '../types';
 import { AudioPlayer } from './AudioPlayer';
 
@@ -38,14 +38,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onOpenMedia }
       case 'image':
         return (
           <div className="space-y-1">
-            {message.media_url && (
+            {message.media_url ? (
               <img
                 src={message.media_url}
                 alt="Imagen"
                 onClick={() => onOpenMedia(message.media_url!, 'image')}
                 className="max-h-72 w-full object-cover rounded cursor-pointer hover:opacity-95 transition"
-                loading="lazy"
               />
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-black/20 rounded text-[#8696a0] text-sm">
+                <ImageIcon size={18} />
+                <span>[Imagen no disponible]</span>
+              </div>
             )}
             {message.body && message.body !== '[image]' && (
               <p className="text-[14.2px] text-[#e9edef] whitespace-pre-wrap break-words px-1 pt-1">

@@ -75,6 +75,21 @@ app.get('/api/chats/:jid/messages', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit as string || '100', 10);
     const messages = await db.getMessages(req.params.jid, limit);
+
+    // Auto-decrypt any media messages that have encrypted .enc or missing data URIs
+    for (const m of messages) {
+      if (m.type !== 'chat' && (!m.media_url || m.media_url.includes('mmg.whatsapp.net') || m.media_url.includes('.enc'))) {
+        try {
+          const decrypted = await evolution.getBase64FromMedia(m.id);
+          if (decrypted?.base64) {
+            const dataUri = `data:${decrypted.mimetype || m.media_mimetype || 'image/jpeg'};base64,${decrypted.base64}`;
+            m.media_url = dataUri;
+            await db.pool.query('UPDATE wsp_messages SET media_url = $1 WHERE id = $2', [dataUri, m.id]);
+          }
+        } catch {}
+      }
+    }
+
     res.json(messages);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

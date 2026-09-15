@@ -342,6 +342,14 @@ export async function syncChatMessages(chatJid: string): Promise<Message[]> {
       mediaUrl = item.base64 ? `data:${mediaMimetype};base64,${item.base64}` : undefined;
     }
 
+    // Auto-decrypt media if base64 not yet embedded
+    if (type !== 'chat' && !mediaUrl) {
+      const decrypted = await getBase64FromMedia(msgId);
+      if (decrypted?.base64) {
+        mediaUrl = `data:${decrypted.mimetype || mediaMimetype || 'image/jpeg'};base64,${decrypted.base64}`;
+      }
+    }
+
     const timestamp = Number(item.messageTimestamp) || Math.floor(Date.now() / 1000);
     let status: MessageAck = fromMe ? 'sent' : 'delivered';
     const rawStatus = item.status;
@@ -385,4 +393,29 @@ export async function markChatRead(chatJid: string): Promise<void> {
   } catch (err: any) {
     console.error(`[EVOLUTION] Error marking chat ${chatJid} read in Evolution:`, err.message);
   }
+}
+
+export async function getBase64FromMedia(messageId: string): Promise<{ base64: string; mimetype?: string } | null> {
+  const inst = encodeURIComponent(config.evolution.instanceName);
+  try {
+    const res = await evolutionFetch(`/chat/getBase64FromMediaMessage/${inst}`, {
+      method: 'POST',
+      body: {
+        message: {
+          key: {
+            id: messageId
+          }
+        }
+      }
+    });
+    if (res.ok && res.data?.base64) {
+      return {
+        base64: res.data.base64,
+        mimetype: res.data.mimetype
+      };
+    }
+  } catch (err: any) {
+    console.error(`[EVOLUTION] Error decrypting media for message ${messageId}:`, err.message);
+  }
+  return null;
 }
